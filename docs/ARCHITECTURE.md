@@ -30,7 +30,17 @@ risk assessment must cover behaviour after the machine is placed on the market. 
 is a learning demonstrator, **not** a certified safety function; real deployments need a
 certified safety PLC and laser scanners (ISO 13849 / IEC 61508).
 
-## Topic remapping
+## Single choke point (topic wiring)
 
-Nav2 publishes `cmd_vel`. Remap it into the gate and the gate output to the robot:
-`ros2 run speed_gate speed_gate --ros-args -r cmd_vel_in:=/cmd_vel_nav -r cmd_vel_out:=/cmd_vel`
+The simulated robot's bridge is launched with `cmd_vel` remapped to `cmd_vel_safe`, and only
+`speed_gate` publishes `cmd_vel_safe`. Every Nav2 node that commands motion publishes `cmd_vel`,
+so all of them pass through the gate:
+
+```
+Nav2 (collision_monitor, docking_server, ...) --/cmd_vel--> speed_gate --/cmd_vel_safe--> robot
+```
+
+Why not just rewire one Nav2 output? Because Nav2 has more than one velocity publisher. During
+development, `ros2 topic info -v /cmd_vel` showed `docking_server` publishing straight to the
+robot, which would have bypassed a gate placed only after the collision monitor. Guarding the
+robot's *input* removes that whole class of bypass.

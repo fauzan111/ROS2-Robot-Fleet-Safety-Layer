@@ -21,6 +21,7 @@ Mobile robots are moving into Italian warehouses, airports and hospitals, and th
 
 | Metric | Value |
 |---|---|
+| Single robot, 5-goal loop through the gate | **5/5 reached, 44.4 s sim time** (week 1) |
 | Missions completed (3 robots) | TBD |
 | Stop latency after a person enters the zone (ms) | TBD |
 | False stops per hour | TBD |
@@ -36,7 +37,8 @@ Requires [uv](https://docs.astral.sh/uv/) and Docker Desktop.
 make setup              # Python ML side
 make test
 make docker-build       # ROS 2 image (first build downloads several GB)
-make docker-up          # then open Foxglove: ws://localhost:8765
+make sim                # simulation + Foxglove on ws://localhost:8765
+make missions           # headless 5-goal run, JSON report in results/
 ```
 
 ## Roadmap

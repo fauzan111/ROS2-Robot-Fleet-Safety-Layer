@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>fleet_bringup</name>
+  <version>0.1.0</version>
+  <description>Launch files and mission runner for the safety-guarded robot fleet.</description>
+  <maintainer email="83760184+fauzan111@users.noreply.github.com">Fauzan Ejaz</maintainer>
+  <license>MIT</license>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>nav2_bringup</exec_depend>
+  <exec_depend>nav2_common</exec_depend>
+  <exec_depend>nav2_minimal_tb3_sim</exec_depend>
+  <exec_depend>nav2_simple_commander</exec_depend>
+  <exec_depend>foxglove_bridge</exec_depend>
+  <exec_depend>speed_gate</exec_depend>
+  <exec_depend>fleet_safety</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

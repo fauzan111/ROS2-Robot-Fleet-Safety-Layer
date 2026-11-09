@@ -2,9 +2,16 @@
 
 ## Week 1: one robot
 
-- [ ] Docker image builds; TurtleBot navigates in Gazebo with Nav2
+- [x] Docker image builds; TurtleBot navigates in Gazebo with Nav2
 - [ ] Foxglove shows map, robot, laser and camera
-- [ ] speed_gate in the loop (pass-through monitor)
+- [x] speed_gate in the loop (pass-through monitor)
+
+### Week 1 notes
+
+- Single choke point: the robot only obeys `/cmd_vel_safe`, published only by `speed_gate`.
+  Found and closed a bypass: Nav2's `docking_server` published straight to `/cmd_vel`.
+- AMCL starts at the spawn pose via `fleet_bringup/config/nav2_overrides.yaml`.
+- First mission: 5/5 goals, 44.4 s sim time.
 
 ## Week 2: fleet
 

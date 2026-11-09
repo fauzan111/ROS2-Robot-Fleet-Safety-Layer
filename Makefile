@@ -12,7 +12,7 @@ lint:
 fmt:
 	uv run ruff format . && uv run ruff check --fix .
 
-.PHONY: docker-build docker-up ros-shell colcon
+.PHONY: docker-build docker-up ros-shell colcon sim missions
 
 docker-build:
 	docker compose build
@@ -25,3 +25,9 @@ ros-shell:
 
 colcon:
 	docker compose run --rm ros bash -c "cd /ws && colcon build --symlink-install"
+
+sim:
+	docker compose run --rm --service-ports ros ros2 launch fleet_bringup sim_one_robot.launch.py
+
+missions:
+	docker compose run --rm ros /ws/scripts/run_missions.sh

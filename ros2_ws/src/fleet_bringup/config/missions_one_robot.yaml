@@ -1,0 +1,10 @@
+# Loop around the TurtleBot sandbox (hexagon with a 3x3 grid of pillars).
+# Poses in the map frame: x [m], y [m], yaw [rad]. Spawn pose is (-2.0, -0.5).
+initial_pose: {x: -2.0, y: -0.5, yaw: 0.0}
+timeout_s: 120
+goals:
+  - {name: centre_gap, x: 0.55, y: -0.5, yaw: 0.0}
+  - {name: east, x: 1.8, y: 0.0, yaw: 1.57}
+  - {name: north, x: 0.55, y: 1.7, yaw: 3.14}
+  - {name: south_west, x: -1.0, y: -1.7, yaw: 3.14}
+  - {name: home, x: -2.0, y: -0.5, yaw: 0.0}

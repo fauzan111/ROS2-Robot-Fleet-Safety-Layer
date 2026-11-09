@@ -1,0 +1,8 @@
+# Overrides deep-merged on top of nav2_bringup's default nav2_params.yaml at launch time.
+# Keep this file small: every line here is a deliberate change from upstream Nav2.
+
+amcl:
+  ros__parameters:
+    # Start localised at the spawn pose, so the costmaps get map -> base_link at bring-up.
+    set_initial_pose: true
+    initial_pose: {x: -2.0, y: -0.5, z: 0.0, yaw: 0.0}
