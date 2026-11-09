@@ -1,0 +1,53 @@
+# ROS 2 Robot Fleet with a Safety Layer
+
+A multi-robot ROS 2 / Nav2 fleet in simulation, guarded by a camera-based safety layer: robots stop when a person enters the protective zone and slow down when the camera sees something the detector was not trained on. The velocity gate is written in C++ and fails safe.
+
+## Why it matters
+
+Mobile robots are moving into Italian warehouses, airports and hospitals, and the EU Machinery Regulation (from 20 January 2027) adds requirements for machine-learning safety functions. Integrators need engineers who can combine ROS 2 navigation, perception and conservative safety logic.
+
+**Relevant employers in Italy:** Comau, Alba Robot, Cyberwave, Oversonic, Teoresi, Fogliani
+
+## What it does
+
+- ROS 2 Jazzy + Nav2 + Gazebo in Docker (native arm64 on Apple Silicon); view in Foxglove
+- Three-robot fleet with waypoint missions
+- `safety_monitor` (Python): person detection, protective-zone check, OOD energy score
+- `speed_gate` (C++, rclcpp): scales Nav2 velocity commands; stops on a stale or missing safety signal
+- Hysteresis state machine so flickering detections cannot cause lurching
+- Metrics: stop latency, missions completed, OOD detection AUROC
+
+## Results
+
+| Metric | Value |
+|---|---|
+| Missions completed (3 robots) | TBD |
+| Stop latency after a person enters the zone (ms) | TBD |
+| False stops per hour | TBD |
+| OOD detection AUROC | TBD |
+
+*Filled in as the roadmap progresses.*
+
+## Quickstart
+
+Requires [uv](https://docs.astral.sh/uv/) and Docker Desktop.
+
+```bash
+make setup              # Python ML side
+make test
+make docker-build       # ROS 2 image (first build downloads several GB)
+make docker-up          # then open Foxglove: ws://localhost:8765
+```
+
+## Roadmap
+
+See [docs/ROADMAP.md](docs/ROADMAP.md).
+
+## In italiano
+
+Flotta di robot mobili in ROS 2 / Nav2 con un livello di sicurezza basato su visione: i robot si fermano quando una persona entra nella zona protetta e rallentano quando la telecamera vede qualcosa di sconosciuto. Il gate di velocità è scritto in C++ ed è fail-safe. Collegato al nuovo Regolamento Macchine UE.
+
+## Licence
+
+Code: MIT, see [LICENSE](LICENSE). Datasets and third-party assets keep their own licences;
+see [data/README.md](data/README.md).

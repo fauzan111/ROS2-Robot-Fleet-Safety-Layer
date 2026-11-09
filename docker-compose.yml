@@ -1,0 +1,11 @@
+# Gazebo runs headless in the container. Visualise in Foxglove Studio: ws://localhost:8765
+services:
+  ros:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    volumes:
+      - ./ros2_ws/src:/ws/src
+    ports:
+      - "8765:8765"
+    command: ros2 launch foxglove_bridge foxglove_bridge_launch.xml

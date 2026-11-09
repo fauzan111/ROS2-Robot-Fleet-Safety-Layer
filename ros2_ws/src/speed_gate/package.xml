@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>speed_gate</name>
+  <version>0.1.0</version>
+  <description>Fail-safe velocity gate: scales Nav2 commands by the safety monitor's speed scale.</description>
+  <maintainer email="83760184+fauzan111@users.noreply.github.com">Fauzan Ejaz</maintainer>
+  <license>MIT</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>rclcpp</depend>
+  <depend>geometry_msgs</depend>
+  <depend>std_msgs</depend>
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
