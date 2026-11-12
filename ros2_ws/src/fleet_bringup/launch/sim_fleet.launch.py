@@ -16,6 +16,7 @@ import os
 import tempfile
 from pathlib import Path
 
+import xacro
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -30,15 +31,16 @@ from launch.actions import (
     RegisterEventHandler,
 )
 from launch.conditions import IfCondition
-from launch.event_handlers import OnProcessExit, OnShutdown
+from launch.event_handlers import OnShutdown
 from launch.launch_description_sources import (
     AnyLaunchDescriptionSource,
     PythonLaunchDescriptionSource,
 )
-from launch.substitutions import Command, FindExecutable, LaunchConfiguration
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 from fleet_bringup.params import write_fleet_params
+from fleet_bringup.sim_assets import actor_sdf, with_actors, with_rgbd_camera
 
 
 def _robot(name: str, spawn: dict, shares: dict, robot_description: str) -> GroupAction:
@@ -50,6 +52,10 @@ def _robot(name: str, spawn: dict, shares: dict, robot_description: str) -> Grou
         spawn,
     )
     tf_remaps = [("/tf", "tf"), ("/tf_static", "tf_static")]
+    # Upstream waffle model with its depth-only camera swapped for a namespaced RGB-D camera.
+    robot_sdf = with_rgbd_camera(xacro.process_file(
+        os.path.join(sim_dir, "urdf", "gz_waffle.sdf.xacro"),
+        mappings={"namespace": name}).toxml(), name)
     return GroupAction(scoped=True, actions=[
         LogInfo(msg=f"robot {name} at ({spawn['x']}, {spawn['y']}, yaw {spawn.get('yaw', 0.0)})"),
         # --- simulator side: spawn the model and bridge its topics
@@ -57,8 +63,7 @@ def _robot(name: str, spawn: dict, shares: dict, robot_description: str) -> Grou
             package="ros_gz_sim", executable="create", namespace=name, output="screen",
             arguments=[
                 "-name", name,
-                "-string", Command([FindExecutable(name="xacro"), " namespace:=", name, " ",
-                                    os.path.join(sim_dir, "urdf", "gz_waffle.sdf.xacro")]),
+                "-string", robot_sdf,
                 "-x", str(spawn["x"]), "-y", str(spawn["y"]), "-z", "0.01",
                 "-Y", str(spawn.get("yaw", 0.0)),
             ],
@@ -99,6 +104,27 @@ def _robot(name: str, spawn: dict, shares: dict, robot_description: str) -> Grou
     ])
 
 
+def _world(context):
+    """tb3_sandbox world plus the walking people from people_file, served by a headless Gazebo."""
+    sim_dir = get_package_share_directory("nav2_minimal_tb3_sim")
+    world = xacro.process_file(os.path.join(sim_dir, "worlds", "tb3_sandbox.sdf.xacro"),
+                               mappings={"headless": "True"}).toxml()
+    people_file = LaunchConfiguration("people_file").perform(context)
+    if people_file:
+        people = yaml.safe_load(Path(people_file).read_text())
+        world = with_actors(world, [actor_sdf(name, p["waypoints"], people["mesh"])
+                                    for name, p in people["people"].items()])
+    with tempfile.NamedTemporaryFile("w", prefix="fleet_world_", suffix=".sdf",
+                                     delete=False) as f:
+        f.write(world)
+    return [
+        LogInfo(msg=f"world: {f.name} (people: {people_file or 'none'})"),
+        ExecuteProcess(cmd=["gz", "sim", "-r", "-s", f.name], output="screen"),
+        RegisterEventHandler(OnShutdown(on_shutdown=[OpaqueFunction(
+            function=lambda _: os.path.exists(f.name) and os.remove(f.name))])),
+    ]
+
+
 def _fleet(context):
     fleet_file = LaunchConfiguration("fleet_file").perform(context)
     results_dir = LaunchConfiguration("results_dir").perform(context)
@@ -132,25 +158,19 @@ def generate_launch_description():
     ours = get_package_share_directory("fleet_bringup")
     foxglove_share = get_package_share_directory("foxglove_bridge")
 
-    world_sdf = tempfile.mktemp(prefix="fleet_world_", suffix=".sdf")
-    world_xacro = ExecuteProcess(cmd=[
-        "xacro", "-o", world_sdf, "headless:=True",
-        os.path.join(sim_dir, "worlds", "tb3_sandbox.sdf.xacro")])
-    gazebo = ExecuteProcess(cmd=["gz", "sim", "-r", "-s", world_sdf], output="screen")
-
     return LaunchDescription([
         DeclareLaunchArgument("fleet_file",
                               default_value=os.path.join(ours, "config", "fleet.yaml")),
         DeclareLaunchArgument("results_dir", default_value="/ws/results"),
+        DeclareLaunchArgument("people_file",
+                              default_value=os.path.join(ours, "config", "people.yaml"),
+                              description="Walking people (Gazebo actors); '' for none"),
         DeclareLaunchArgument("foxglove", default_value="True",
                               description="Start Foxglove bridge"),
         # Gazebo must find the TurtleBot world and robot models (set before Gazebo starts).
         AppendEnvironmentVariable("GZ_SIM_RESOURCE_PATH", os.path.join(sim_dir, "models")),
         AppendEnvironmentVariable("GZ_SIM_RESOURCE_PATH", os.path.dirname(sim_dir)),
-        world_xacro,
-        RegisterEventHandler(OnProcessExit(target_action=world_xacro, on_exit=[gazebo])),
-        RegisterEventHandler(OnShutdown(on_shutdown=[OpaqueFunction(
-            function=lambda _: os.path.exists(world_sdf) and os.remove(world_sdf))])),
+        OpaqueFunction(function=_world),
         # One clock for the whole world (not one per robot bridge).
         Node(
             package="ros_gz_bridge", executable="parameter_bridge", name="clock_bridge",

@@ -1,0 +1,20 @@
+# Walking people (Gazebo actors) for the fleet world. Trajectories loop forever; times are
+# sim seconds from start, positions are world metres. Actors have no collision geometry, so
+# the safety layer (camera) and the laser are what keep robots from driving through them.
+mesh: /opt/fleet_models/actor/walk.dae
+
+people:
+  person1:   # west corridor, walks north-south across robot1's route, pauses at each end
+    waypoints:
+      - {t: 0.0, x: -1.65, y: -1.2}
+      - {t: 3.0, x: -1.65, y: -1.2}
+      - {t: 6.5, x: -1.65, y: 1.2}
+      - {t: 9.5, x: -1.65, y: 1.2}
+      - {t: 13.0, x: -1.65, y: -1.2}
+  person2:   # centre corridor, walks east-west across robot3's north-south route
+    waypoints:
+      - {t: 0.0, x: 0.9, y: -0.55}
+      - {t: 4.0, x: 0.9, y: -0.55}
+      - {t: 6.5, x: -0.9, y: -0.55}
+      - {t: 10.5, x: -0.9, y: -0.55}
+      - {t: 13.0, x: 0.9, y: -0.55}
