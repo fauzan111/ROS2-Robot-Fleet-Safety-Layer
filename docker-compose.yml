@@ -8,6 +8,7 @@ services:
       - ./ros2_ws/src:/ws/src
       - ./results:/ws/results
       - ./scripts:/ws/scripts
+      - ./src/fleet_ml:/opt/fleet_ml/fleet_ml
     ports:
       - "8765:8765"
     command: ros2 launch fleet_bringup sim_one_robot.launch.py

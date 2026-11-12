@@ -103,7 +103,8 @@ class FaultInjection(Node):
         self.monitor_proc = subprocess.Popen([
             "ros2", "run", "fleet_safety", "safety_monitor", "--ros-args",
             "-r", f"__ns:=/{self.target}", "-r", "__node:=safety_monitor",
-            "-p", "use_sim_time:=true"])
+            "-r", "/tf:=tf", "-r", "/tf_static:=tf_static",
+            "-p", "use_sim_time:=true", "-p", "perception:=true"])  # same config as launch
         self.t_restart = self.now_s()
         self.state = "restarted"
         self.get_logger().warn(f"restarted {self.target}/safety_monitor at "

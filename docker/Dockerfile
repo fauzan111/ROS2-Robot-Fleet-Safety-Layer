@@ -18,6 +18,15 @@ RUN mkdir -p /opt/fleet_models/actor \
        https://fuel.gazebosim.org/1.0/Mingfei/models/actor/1/files/meshes/walk.dae \
     && echo "49af0df3a319d1cb8ca2cebf02dbd00f625e5d5bec820bc5e109925b18b65c6e  /opt/fleet_models/actor/walk.dae" \
        | sha256sum -c -
+# Person detector: YOLOv4-tiny (COCO), run by OpenCV DNN. Config vendored, weights pinned.
+COPY docker/models/yolov4-tiny.cfg /opt/fleet_models/yolov4-tiny/yolov4-tiny.cfg
+RUN curl -fsSL -o /opt/fleet_models/yolov4-tiny/yolov4-tiny.weights \
+       https://github.com/AlexeyAB/darknet/releases/download/darknet_yolo_v4_pre/yolov4-tiny.weights \
+    && echo "cf9fbfd0f6d4869b35762f56100f50ed05268084078805f0e7989efe5bb8ca87  /opt/fleet_models/yolov4-tiny/yolov4-tiny.weights" \
+       | sha256sum -c -
+# fleet_ml (zone logic, perception, OOD) is shared with the offline Python side.
+COPY src/fleet_ml /opt/fleet_ml/fleet_ml
+ENV PYTHONPATH=/opt/fleet_ml
 WORKDIR /ws
 COPY ros2_ws/src /ws/src
 RUN . /opt/ros/jazzy/setup.sh && colcon build --symlink-install

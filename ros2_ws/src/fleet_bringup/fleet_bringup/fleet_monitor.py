@@ -1,8 +1,9 @@
 """Watch the whole fleet: distance driven, closest approaches and near misses.
 
-Subscribes to /<robot>/odom for every robot in the fleet file, converts to the world
-frame with each spawn pose, and rewrites results/fleet_monitor.json every second
-(atomically), so the numbers survive however the run ends.
+Uses each robot's Gazebo ground-truth pose (/<robot>/ground_truth/pose) when available and
+falls back to wheel odometry (/<robot>/odom + spawn pose), which drifts once a robot is
+pushed. Rewrites results/fleet_monitor.json every second (atomically), so the numbers
+survive however the run ends.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from pathlib import Path
 
 import rclpy
 import yaml
+from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 
@@ -33,18 +35,30 @@ class FleetMonitor(Node):
         self.near = NearMissCounter(threshold_m=threshold, clear_m=threshold + 0.1)
         self.paths = {name: PathLength() for name in self.spawn}
         self.pos: dict[str, tuple[float, float]] = {}
+        self.has_truth: set[str] = set()
 
         for name in self.spawn:
             self.create_subscription(
                 Odometry, f"/{name}/odom", lambda msg, n=name: self.on_odom(n, msg), 10)
+            self.create_subscription(
+                PoseStamped, f"/{name}/ground_truth/pose",
+                lambda msg, n=name: self.on_truth(n, msg), 10)
         self.create_timer(0.1, self.tick)
         self.create_timer(1.0, self.save)
         self.get_logger().info(f"fleet_monitor watching {sorted(self.spawn)}, "
                                f"near miss < {threshold} m")
 
     def on_odom(self, name: str, msg: Odometry) -> None:
+        if name in self.has_truth:
+            return
         p = msg.pose.pose.position
-        xy = odom_to_world(self.spawn[name], p.x, p.y)
+        self._update(name, odom_to_world(self.spawn[name], p.x, p.y))
+
+    def on_truth(self, name: str, msg: PoseStamped) -> None:
+        self.has_truth.add(name)
+        self._update(name, (msg.pose.position.x, msg.pose.position.y))
+
+    def _update(self, name: str, xy: tuple[float, float]) -> None:
         self.pos[name] = xy
         self.paths[name].update(*xy)
 
@@ -61,6 +75,8 @@ class FleetMonitor(Node):
             "near_miss_events": self.near.events,
             "min_separation_m": {k: round(v, 3) for k, v in self.near.min_separation_m.items()},
             "distance_m": {k: round(p.total_m, 2) for k, p in self.paths.items()},
+            "position_source": {k: ("ground_truth" if k in self.has_truth else "odometry")
+                                for k in self.spawn},
         }
         tmp = self.out.with_suffix(".tmp")
         tmp.write_text(json.dumps(data, indent=2))

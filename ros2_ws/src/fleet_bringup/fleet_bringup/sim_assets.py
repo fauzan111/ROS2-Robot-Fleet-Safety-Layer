@@ -19,7 +19,7 @@ _DEPTH_SENSOR = re.compile(
     r'<sensor name="intel_realsense_r200_depth" type="depth">.*?</sensor>', re.DOTALL)
 
 
-def rgbd_sensor_xml(namespace: str, rate_hz: float = 10.0, width: int = 320,
+def rgbd_sensor_xml(namespace: str, rate_hz: float = 5.0, width: int = 320,
                     height: int = 240, hfov: float = 1.047, far_m: float = 8.0) -> str:
     topic = f"{namespace}/camera" if namespace else "camera"
     # Link camera_link sits at (0.069, -0.047, 0.107) in the model frame; the URDF's
@@ -43,6 +43,27 @@ def with_rgbd_camera(robot_sdf: str, namespace: str, **kwargs) -> str:
     if n != 1:
         raise ValueError(f"expected one upstream depth sensor to replace, found {n}")
     return patched
+
+
+_POSE_PUBLISHER = """<plugin filename="gz-sim-pose-publisher-system"
+        name="gz::sim::systems::PosePublisher">
+        <publish_link_pose>false</publish_link_pose>
+        <publish_model_pose>true</publish_model_pose>
+        <use_pose_vector_msg>false</use_pose_vector_msg>
+        <update_frequency>{rate_hz}</update_frequency>
+      </plugin>"""
+
+
+def with_pose_publisher(robot_sdf: str, rate_hz: float = 20.0) -> str:
+    """Publish the model's ground-truth world pose on /model/<name>/pose.
+
+    Metrics (separation, stop latency) need the true pose: wheel odometry drifts as soon as a
+    robot is pushed or slips, which is exactly when the numbers matter.
+    """
+    idx = robot_sdf.rfind("</model>")
+    if idx < 0:
+        raise ValueError("no </model> tag in robot SDF")
+    return robot_sdf[:idx] + _POSE_PUBLISHER.format(rate_hz=rate_hz) + "\n    " + robot_sdf[idx:]
 
 
 def actor_sdf(name: str, waypoints: list[dict], mesh: str) -> str:

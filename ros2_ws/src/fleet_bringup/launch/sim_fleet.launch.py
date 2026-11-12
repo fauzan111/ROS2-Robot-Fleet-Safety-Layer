@@ -40,7 +40,12 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 from fleet_bringup.params import write_fleet_params
-from fleet_bringup.sim_assets import actor_sdf, with_actors, with_rgbd_camera
+from fleet_bringup.sim_assets import (
+    actor_sdf,
+    with_actors,
+    with_pose_publisher,
+    with_rgbd_camera,
+)
 
 
 def _robot(name: str, spawn: dict, shares: dict, robot_description: str) -> GroupAction:
@@ -53,9 +58,9 @@ def _robot(name: str, spawn: dict, shares: dict, robot_description: str) -> Grou
     )
     tf_remaps = [("/tf", "tf"), ("/tf_static", "tf_static")]
     # Upstream waffle model with its depth-only camera swapped for a namespaced RGB-D camera.
-    robot_sdf = with_rgbd_camera(xacro.process_file(
+    robot_sdf = with_pose_publisher(with_rgbd_camera(xacro.process_file(
         os.path.join(sim_dir, "urdf", "gz_waffle.sdf.xacro"),
-        mappings={"namespace": name}).toxml(), name)
+        mappings={"namespace": name}).toxml(), name))
     return GroupAction(scoped=True, actions=[
         LogInfo(msg=f"robot {name} at ({spawn['x']}, {spawn['y']}, yaw {spawn.get('yaw', 0.0)})"),
         # --- simulator side: spawn the model and bridge its topics
@@ -73,6 +78,14 @@ def _robot(name: str, spawn: dict, shares: dict, robot_description: str) -> Grou
             output="screen",
             parameters=[{"config_file": os.path.join(ours, "config", "tb3_bridge.yaml"),
                          "expand_gz_topic_names": True, "use_sim_time": True}],
+        ),
+        # Ground-truth world pose for metrics only (navigation never sees it).
+        Node(
+            package="ros_gz_bridge", executable="parameter_bridge", name="ground_truth_bridge",
+            namespace=name, output="screen",
+            arguments=[f"/model/{name}/pose@geometry_msgs/msg/PoseStamped[gz.msgs.Pose",
+                       "--ros-args", "-r", f"/model/{name}/pose:=/{name}/ground_truth/pose"],
+            parameters=[{"use_sim_time": True}],
         ),
         Node(
             package="robot_state_publisher", executable="robot_state_publisher", namespace=name,
@@ -99,7 +112,8 @@ def _robot(name: str, spawn: dict, shares: dict, robot_description: str) -> Grou
         ),
         Node(
             package="fleet_safety", executable="safety_monitor", name="safety_monitor",
-            namespace=name, output="screen", parameters=[{"use_sim_time": True}],
+            namespace=name, output="screen", remappings=tf_remaps,
+            parameters=[{"use_sim_time": True, "perception": True}],
         ),
     ])
 

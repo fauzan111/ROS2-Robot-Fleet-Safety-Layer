@@ -60,3 +60,14 @@ def test_person_position_interpolates_and_loops():
     assert person_position(WALK, 2.0) == pytest.approx((1.0, 0.0))
     assert person_position(WALK, 5.0) == pytest.approx((2.0, 0.0))   # standing still
     assert person_position(WALK, 12.0) == pytest.approx((1.0, 0.0))  # 12 s = 2 s into loop 2
+
+
+def test_pose_publisher_added_inside_model():
+    from fleet_bringup.sim_assets import with_pose_publisher
+
+    out = with_pose_publisher(UPSTREAM)
+    assert out.index("PosePublisher") < out.index("</model>")
+    assert "<publish_model_pose>true</publish_model_pose>" in out
+    xml.dom.minidom.parseString(out)
+    with pytest.raises(ValueError, match="model"):
+        with_pose_publisher("<sdf/>")

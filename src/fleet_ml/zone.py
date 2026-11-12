@@ -49,12 +49,24 @@ SPEED_SCALE = {SafetyState.NORMAL: 1.0, SafetyState.SLOW: 0.3, SafetyState.STOP:
 
 @dataclass
 class SafetyStateMachine:
+    """STOP beats SLOW beats NORMAL, with hold times so flickering inputs cannot make the
+    robot lurch: leaving STOP needs `clear_for_s` with no person in the stop zone, and
+    leaving SLOW needs `slow_hold_s` with no reason to slow down."""
+
     clear_for_s: float = 1.0
+    slow_hold_s: float = 0.5
     state: SafetyState = SafetyState.NORMAL
     _clear_since: float | None = field(default=None, repr=False)
+    _last_slow_t: float | None = field(default=None, repr=False)
 
-    def update(self, t: float, person_in_zone: bool, ood: bool) -> float:
-        """Advance to time t (seconds) and return the allowed speed scale in [0, 1]."""
+    def update(self, t: float, person_in_zone: bool, slow: bool) -> float:
+        """Advance to time t (seconds) and return the allowed speed scale in [0, 1].
+
+        slow: a reason to slow down now (person in the warning zone, out-of-distribution frame).
+        """
+        if slow:
+            self._last_slow_t = t
+        slow_held = self._last_slow_t is not None and t - self._last_slow_t < self.slow_hold_s
         if person_in_zone:
             self.state = SafetyState.STOP
             self._clear_since = None
@@ -62,8 +74,8 @@ class SafetyStateMachine:
             if self._clear_since is None:
                 self._clear_since = t
             if t - self._clear_since >= self.clear_for_s:
-                self.state = SafetyState.SLOW if ood else SafetyState.NORMAL
+                self.state = SafetyState.SLOW if (slow or slow_held) else SafetyState.NORMAL
                 self._clear_since = None
         else:
-            self.state = SafetyState.SLOW if ood else SafetyState.NORMAL
+            self.state = SafetyState.SLOW if (slow or slow_held) else SafetyState.NORMAL
         return SPEED_SCALE[self.state]
