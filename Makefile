@@ -30,4 +30,4 @@ sim:
 	docker compose run --rm --service-ports ros ros2 launch fleet_bringup sim_one_robot.launch.py
 
 missions:
-	docker compose run --rm ros /ws/scripts/run_missions.sh
+	docker compose run --rm --service-ports ros /ws/scripts/run_missions.sh

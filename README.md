@@ -41,6 +41,18 @@ make sim                # simulation + Foxglove on ws://localhost:8765
 make missions           # headless 5-goal run, JSON report in results/
 ```
 
+### Viewing in Foxglove
+
+With `make sim` running, open [Foxglove](https://foxglove.dev/download) and choose
+**Open connection → Foxglove WebSocket → `ws://localhost:8765`**. Add a **3D** panel and
+enable `/map`, `/scan`, `/tf`, `/robot_description` and `/plan`. Send a goal with the panel's
+**Publish → Pose** tool on `/goal_pose`, or stop `make sim` and run `make missions` instead (the
+bridge is served there too) to watch the five-goal loop. Add a **Plot** panel on `/safety/speed_scale.data`
+to watch the safety scale.
+
+The bridge (foxglove_bridge 3.x) speaks only the `foxglove.sdk.v1` protocol, so use a current
+Foxglove release. One simulated robot uses about 1.1 GB of RAM and 1.8 CPU cores.
+
 ## Roadmap
 
 See [docs/ROADMAP.md](docs/ROADMAP.md).
