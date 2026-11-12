@@ -1,0 +1,3 @@
+# Overrides applied to every robot's Nav2 params, on top of upstream
+# nav2_multirobot_params_all.yaml. AMCL's initial pose is set per robot from fleet.yaml.
+{}

@@ -2,6 +2,11 @@
 
     ros2 run fleet_bringup mission_runner --ros-args -p use_sim_time:=true \
         -p missions_file:=/ws/src/fleet_bringup/config/missions_one_robot.yaml
+
+Fleet: run one per robot in its namespace; the robot's entry is picked from the file.
+
+    ros2 run fleet_bringup mission_runner --ros-args -r __ns:=/robot1 \
+        -p use_sim_time:=true -p missions_file:=/ws/src/fleet_bringup/config/fleet.yaml
 """
 
 from __future__ import annotations
@@ -16,6 +21,8 @@ import rclpy
 import yaml
 from geometry_msgs.msg import PoseStamped
 from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
+
+from fleet_bringup.missions import mission_for
 
 
 def make_pose(nav: BasicNavigator, x: float, y: float, yaw: float) -> PoseStamped:
@@ -35,22 +42,29 @@ def main() -> None:
     missions_file = nav.declare_parameter("missions_file", "").value
     results_dir = Path(nav.declare_parameter("results_dir", "/ws/results").value)
     cfg = yaml.safe_load(Path(missions_file).read_text())
+    robot = nav.get_namespace().strip("/")  # '' for the single-robot setup
+    ip, goals = mission_for(cfg, robot)
 
-    ip = cfg["initial_pose"]
     nav.setInitialPose(make_pose(nav, ip["x"], ip["y"], ip.get("yaw", 0.0)))
     nav.waitUntilNav2Active()
 
+    def sim_now_s() -> float:
+        return nav.get_clock().now().nanoseconds / 1e9
+
     timeout_s = float(cfg.get("timeout_s", 120))
     records = []
-    for goal in cfg["goals"]:
+    start_sim_s = sim_now_s()
+    for goal in goals:
         nav.get_logger().info(f"goal '{goal['name']}' -> ({goal['x']}, {goal['y']})")
         sim_t0 = nav.get_clock().now()
         wall_t0 = time.monotonic()
         nav.goToPose(make_pose(nav, goal["x"], goal["y"], goal.get("yaw", 0.0)))
+        cancelled = False
         while not nav.isTaskComplete():
-            if time.monotonic() - wall_t0 > timeout_s:
+            if not cancelled and time.monotonic() - wall_t0 > timeout_s:
                 nav.get_logger().warn(f"goal '{goal['name']}' timed out; cancelling")
                 nav.cancelTask()
+                cancelled = True
         result = nav.getResult()
         sim_s = (nav.get_clock().now() - sim_t0).nanoseconds / 1e9
         records.append({
@@ -65,12 +79,16 @@ def main() -> None:
     summary = {
         "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "missions_file": missions_file,
+        "robot": robot,
         "succeeded": succeeded,
         "total": len(records),
+        "start_sim_s": round(start_sim_s, 1),
+        "end_sim_s": round(sim_now_s(), 1),
         "goals": records,
     }
     results_dir.mkdir(parents=True, exist_ok=True)
-    out = results_dir / f"missions_{datetime.now():%Y%m%d_%H%M%S}.json"
+    tag = f"{robot}_" if robot else ""
+    out = results_dir / f"missions_{tag}{datetime.now():%Y%m%d_%H%M%S}.json"
     out.write_text(json.dumps(summary, indent=2))
     nav.get_logger().info(f"{succeeded}/{len(records)} goals reached. Results: {out}")
     rclpy.shutdown()

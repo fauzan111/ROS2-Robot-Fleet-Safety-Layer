@@ -1,7 +1,7 @@
 # Architecture
 
 ```
-                 camera/image_raw                     /safety/speed_scale (Float32)
+                 camera/image_raw                      safety/speed_scale (Float32)
  Gazebo robot ───────────────────► safety_monitor ───────────────────────────┐
      ▲                          (Python: detector, zone, OOD)                │
      │                                                                       ▼
@@ -44,3 +44,30 @@ Why not just rewire one Nav2 output? Because Nav2 has more than one velocity pub
 development, `ros2 topic info -v /cmd_vel` showed `docking_server` publishing straight to the
 robot, which would have bypassed a gate placed only after the collision monitor. Guarding the
 robot's *input* removes that whole class of bypass.
+
+## Fleet (week 2)
+
+`sim_fleet.launch.py` reads `config/fleet.yaml` and starts, per robot, everything above inside
+the robot's namespace, plus one shared Gazebo world, one `/clock` bridge and a `fleet_monitor`:
+
+```
+/robot1:  Nav2 --cmd_vel--> speed_gate --cmd_vel_safe--> ros_gz_bridge --> Gazebo /robot1/cmd_vel
+                                ^ safety/speed_scale (safety_monitor)
+/robot2:  ... same chain ...
+/robot3:  ... same chain ...
+fleet_monitor: /robotN/odom -> separation, near misses, distance -> results/fleet_monitor.json
+```
+
+- **One safety chain per robot.** All names are relative, so each gate listens only to its own
+  robot's monitor. A person next to robot1 should not stop robot3 across the hall, and a
+  crashed monitor should stop only its own robot (fault-injection test planned for week 4).
+- **The choke point is in the bridge config, not a remap.** `config/tb3_bridge.yaml` maps ROS
+  `cmd_vel_safe` to the Gazebo wheels' `cmd_vel`; nothing else reaches the wheels. That is
+  easier to audit than a launch-file remap.
+- **Separate TF trees.** Each robot's frames live on `/robotN/tf` (Nav2's multi-robot pattern),
+  so robots never fight over `map`/`odom`/`base_link`. The cost: a single Foxglove 3D view
+  needs a relay that prefixes frames (`robot1/base_link`) into one tree.
+- **Near misses use ground-truth-like odometry.** Gazebo's diff-drive odometry starts at zero
+  at the spawn pose; `fleet_monitor` transforms it to the world frame with each spawn pose and
+  counts a near miss below 0.5 m centre-to-centre, with 0.1 m hysteresis so one close pass is
+  one event.

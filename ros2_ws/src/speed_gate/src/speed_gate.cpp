@@ -2,7 +2,7 @@
 //
 //   Nav2 --cmd_vel_in--> [speed_gate] --cmd_vel_out--> robot base
 //                             ^
-//         /safety/speed_scale |  (Float32 in [0, 1] from safety_monitor)
+//          safety/speed_scale |  (Float32 in [0, 1] from safety_monitor)
 //
 // Fail-safe rule: if no speed scale has arrived yet, or the last one is older than
 // `safety_timeout_s`, the robot is stopped. A crashed or frozen safety monitor must
@@ -26,7 +26,7 @@ public:
     pub_ = create_publisher<geometry_msgs::msg::Twist>("cmd_vel_out", 10);
 
     scale_sub_ = create_subscription<std_msgs::msg::Float32>(
-      "/safety/speed_scale", 10,
+      "safety/speed_scale", 10,  // relative: /robotN/... in a fleet
       [this](const std_msgs::msg::Float32::SharedPtr msg) {
         scale_ = std::clamp(static_cast<double>(msg->data), 0.0, 1.0);
         last_scale_time_ = now();

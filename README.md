@@ -22,7 +22,8 @@ Mobile robots are moving into Italian warehouses, airports and hospitals, and th
 | Metric | Value |
 |---|---|
 | Single robot, 5-goal loop through the gate | **5/5 reached, 44.4 s sim time** (week 1) |
-| Missions completed (3 robots) | TBD |
+| Three-robot fleet, 14 goals in parallel | **14/14 reached, makespan 58.8 s sim, 14.3 goals/min** (week 2) |
+| Closest robot-to-robot approach / near misses (< 0.5 m) | **0.49 m / 1** (week 2) |
 | Stop latency after a person enters the zone (ms) | TBD |
 | False stops per hour | TBD |
 | OOD detection AUROC | TBD |
@@ -39,6 +40,8 @@ make test
 make docker-build       # ROS 2 image (first build downloads several GB)
 make sim                # simulation + Foxglove on ws://localhost:8765
 make missions           # headless 5-goal run, JSON report in results/
+make sim-fleet          # three robots + Foxglove
+make fleet              # headless three-robot run, fleet report in results/
 ```
 
 ### Viewing in Foxglove

@@ -16,5 +16,9 @@ setup(
     ],
     install_requires=["setuptools"],
     zip_safe=True,
-    entry_points={"console_scripts": ["mission_runner = fleet_bringup.mission_runner:main"]},
+    entry_points={"console_scripts": [
+        "mission_runner = fleet_bringup.mission_runner:main",
+        "fleet_monitor = fleet_bringup.fleet_monitor:main",
+        "fleet_report = fleet_bringup.fleet_report:main",
+    ]},
 )
