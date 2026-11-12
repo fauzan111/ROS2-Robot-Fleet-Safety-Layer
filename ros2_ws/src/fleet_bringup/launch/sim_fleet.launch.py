@@ -113,6 +113,11 @@ def _fleet(context):
 
     actions = [_robot(name, r["spawn"], shares, robot_description)
                for name, r in cfg["robots"].items()]
+    # Visualisation only: merge the robots' TF trees under 'world' for Foxglove.
+    actions.append(Node(
+        package="fleet_bringup", executable="fleet_tf_relay", name="fleet_tf_relay",
+        output="screen", parameters=[{"use_sim_time": True, "fleet_file": fleet_file}],
+    ))
     actions.append(Node(
         package="fleet_bringup", executable="fleet_monitor", name="fleet_monitor",
         output="screen",

@@ -22,8 +22,9 @@ Mobile robots are moving into Italian warehouses, airports and hospitals, and th
 | Metric | Value |
 |---|---|
 | Single robot, 5-goal loop through the gate | **5/5 reached, 44.4 s sim time** (week 1) |
-| Three-robot fleet, 14 goals in parallel | **14/14 reached, makespan 58.8 s sim, 14.3 goals/min** (week 2) |
-| Closest robot-to-robot approach / near misses (< 0.5 m) | **0.49 m / 1** (week 2) |
+| Three-robot fleet, 14 goals in parallel (2 runs) | **14/14** (makespan 58.8 s sim) and **13/14** (robot1 wedged after a close pass, goal cancelled at 120 s) (week 2) |
+| Closest robot-to-robot approach / near misses (< 0.5 m) | **0.49 m / 1** and **0.42 m / 2** (week 2) |
+| Fault injection: robot2's safety monitor crashed (SIGKILL) mid-mission | **gate zeroed in 0.50 s (timeout 0.5 s), robot halted in 0.78 s; robot1/robot3 kept driving (0.75 m, 1.17 m in 5 s); resumed 2.8 s after restart** |
 | Stop latency after a person enters the zone (ms) | TBD |
 | False stops per hour | TBD |
 | OOD detection AUROC | TBD |
@@ -42,6 +43,7 @@ make sim                # simulation + Foxglove on ws://localhost:8765
 make missions           # headless 5-goal run, JSON report in results/
 make sim-fleet          # three robots + Foxglove
 make fleet              # headless three-robot run, fleet report in results/
+make fault             # crash robot2's safety monitor mid-mission, score the fail-safe
 ```
 
 ### Viewing in Foxglove
@@ -55,6 +57,12 @@ to watch the safety scale.
 
 The bridge (foxglove_bridge 3.x) speaks only the `foxglove.sdk.v1` protocol, so use a current
 Foxglove release. One simulated robot uses about 1.1 GB of RAM and 1.8 CPU cores.
+
+**Whole fleet in one view** (`make sim-fleet` or `make fleet`): set the 3D panel's display
+frame to `world` and enable `/tf`, `/fleet/robot1/scan` … `/fleet/robot3/scan` and
+`/fleet/robot1/map`. For the robot models add one **URDF** custom layer per robot with topic
+`/robotN/robot_description` and frame prefix `robotN/`. `fleet_tf_relay` merges each robot's
+own TF tree into the global `/tf` as `robotN/<frame>`; the robots' trees are untouched.
 
 ## Roadmap
 

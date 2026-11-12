@@ -12,7 +12,7 @@ lint:
 fmt:
 	uv run ruff format . && uv run ruff check --fix .
 
-.PHONY: docker-build docker-up ros-shell colcon sim missions sim-fleet fleet
+.PHONY: docker-build docker-up ros-shell colcon sim missions sim-fleet fleet fault
 
 docker-build:
 	docker compose build
@@ -37,3 +37,6 @@ sim-fleet:
 
 fleet:
 	docker compose run --rm --service-ports ros /ws/scripts/run_fleet.sh
+
+fault:
+	docker compose run --rm --service-ports ros /ws/scripts/run_fault.sh

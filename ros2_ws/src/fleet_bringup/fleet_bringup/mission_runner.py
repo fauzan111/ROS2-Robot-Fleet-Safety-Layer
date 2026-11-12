@@ -20,6 +20,7 @@ from pathlib import Path
 import rclpy
 import yaml
 from geometry_msgs.msg import PoseStamped
+from lifecycle_msgs.srv import GetState
 from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
 
 from fleet_bringup.missions import mission_for
@@ -36,6 +37,44 @@ def make_pose(nav: BasicNavigator, x: float, y: float, yaw: float) -> PoseStampe
     return pose
 
 
+def _node_active(nav: BasicNavigator, node_name: str, timeout_s: float) -> bool:
+    """Bounded version of BasicNavigator's lifecycle wait (which waits forever)."""
+    client = nav.create_client(GetState, f"{node_name}/get_state")
+    deadline = time.monotonic() + timeout_s
+    try:
+        while time.monotonic() < deadline:
+            if not client.wait_for_service(timeout_sec=1.0):
+                continue
+            future = client.call_async(GetState.Request())
+            rclpy.spin_until_future_complete(nav, future, timeout_sec=2.0)
+            result = future.result()
+            if result is not None and result.current_state.label == "active":
+                return True
+            time.sleep(0.5)
+        return False
+    finally:
+        nav.destroy_client(client)
+
+
+def wait_for_nav2(nav: BasicNavigator, initial_pose: PoseStamped, timeout_s: float = 60.0,
+                  attempts: int = 3) -> BasicNavigator:
+    """Wait for AMCL and the BT navigator; on timeout rebuild the node and retry.
+
+    With several Nav2 stacks starting at once, a client's DDS discovery of a service can get
+    stuck (seen in the fleet: amcl logged 'failed to send response' and the runner waited
+    forever). A fresh node redoes discovery. Returns the navigator to use from here on.
+    """
+    for attempt in range(1, attempts + 1):
+        nav.setInitialPose(initial_pose)
+        if all(_node_active(nav, n, timeout_s) for n in ("amcl", "bt_navigator")):
+            return nav
+        nav.get_logger().warn(f"Nav2 not reachable after {timeout_s:.0f} s (attempt "
+                              f"{attempt}/{attempts}); recreating the navigator node")
+        nav.destroy_node()
+        nav = BasicNavigator()
+    raise RuntimeError(f"Nav2 not reachable after {attempts} attempts")
+
+
 def main() -> None:
     rclpy.init()
     nav = BasicNavigator()
@@ -45,8 +84,8 @@ def main() -> None:
     robot = nav.get_namespace().strip("/")  # '' for the single-robot setup
     ip, goals = mission_for(cfg, robot)
 
-    nav.setInitialPose(make_pose(nav, ip["x"], ip["y"], ip.get("yaw", 0.0)))
-    nav.waitUntilNav2Active()
+    nav = wait_for_nav2(nav, make_pose(nav, ip["x"], ip["y"], ip.get("yaw", 0.0)))
+    nav.get_logger().info("Nav2 is ready")
 
     def sim_now_s() -> float:
         return nav.get_clock().now().nanoseconds / 1e9

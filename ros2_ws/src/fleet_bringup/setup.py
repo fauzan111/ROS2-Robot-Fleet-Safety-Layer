@@ -20,5 +20,7 @@ setup(
         "mission_runner = fleet_bringup.mission_runner:main",
         "fleet_monitor = fleet_bringup.fleet_monitor:main",
         "fleet_report = fleet_bringup.fleet_report:main",
+        "fleet_tf_relay = fleet_bringup.fleet_tf_relay:main",
+        "fault_injection = fleet_bringup.fault_injection:main",
     ]},
 )

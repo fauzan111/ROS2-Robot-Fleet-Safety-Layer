@@ -56,11 +56,13 @@ the robot's namespace, plus one shared Gazebo world, one `/clock` bridge and a `
 /robot2:  ... same chain ...
 /robot3:  ... same chain ...
 fleet_monitor: /robotN/odom -> separation, near misses, distance -> results/fleet_monitor.json
+fleet_tf_relay: /robotN/tf -> /tf as robotN/<frame> under "world" (Foxglove fleet view)
 ```
 
 - **One safety chain per robot.** All names are relative, so each gate listens only to its own
   robot's monitor. A person next to robot1 should not stop robot3 across the hall, and a
-  crashed monitor should stop only its own robot (fault-injection test planned for week 4).
+  crashed monitor stops only its own robot (shown by `make fault`: robot2 halted, the others
+  kept driving).
 - **The choke point is in the bridge config, not a remap.** `config/tb3_bridge.yaml` maps ROS
   `cmd_vel_safe` to the Gazebo wheels' `cmd_vel`; nothing else reaches the wheels. That is
   easier to audit than a launch-file remap.
