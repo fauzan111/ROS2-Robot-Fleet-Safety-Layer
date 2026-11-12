@@ -1,0 +1,20 @@
+# Two people crossing robot1's corridor (y = -0.5) through the pillar gaps at x = -0.55 and
+# x = 0.55, waiting outside the corridor between crossings. Different loop periods (12.4 s
+# and 16.4 s) so crossings meet the robot at many different distances and phases.
+mesh: /opt/fleet_models/actor/walk.dae
+
+people:
+  crosser_west:
+    waypoints:
+      - {t: 0.0, x: -0.55, y: 0.35}
+      - {t: 4.0, x: -0.55, y: 0.35}
+      - {t: 6.2, x: -0.55, y: -1.35}
+      - {t: 10.2, x: -0.55, y: -1.35}
+      - {t: 12.4, x: -0.55, y: 0.35}
+  crosser_east:
+    waypoints:
+      - {t: 0.0, x: 0.55, y: -1.35}
+      - {t: 6.0, x: 0.55, y: -1.35}
+      - {t: 8.2, x: 0.55, y: 0.35}
+      - {t: 14.2, x: 0.55, y: 0.35}
+      - {t: 16.4, x: 0.55, y: -1.35}

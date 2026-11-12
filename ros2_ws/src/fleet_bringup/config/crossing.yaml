@@ -1,0 +1,15 @@
+# Stop-latency scenario: robot1 shuttles along the free corridor at y = -0.5 (between the
+# pillar rows at y = 0 and y = -1.1) while people from people_crossing.yaml cross it.
+timeout_s: 120
+near_miss_m: 0.5
+
+robots:
+  robot1:
+    spawn: {x: -2.0, y: -0.5, yaw: 0.0}
+    goals:
+      - {name: east_1, x: 1.6, y: -0.5, yaw: 3.14}
+      - {name: west_1, x: -1.8, y: -0.5, yaw: 0.0}
+      - {name: east_2, x: 1.6, y: -0.5, yaw: 3.14}
+      - {name: west_2, x: -1.8, y: -0.5, yaw: 0.0}
+      - {name: east_3, x: 1.6, y: -0.5, yaw: 3.14}
+      - {name: west_3, x: -1.8, y: -0.5, yaw: 0.0}

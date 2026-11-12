@@ -23,5 +23,7 @@ setup(
         "fleet_tf_relay = fleet_bringup.fleet_tf_relay:main",
         "fault_injection = fleet_bringup.fault_injection:main",
         "frame_recorder = fleet_bringup.frame_recorder:main",
+        "safety_recorder = fleet_bringup.safety_recorder:main",
+        "safety_report = fleet_bringup.safety_report:main",
     ]},
 )

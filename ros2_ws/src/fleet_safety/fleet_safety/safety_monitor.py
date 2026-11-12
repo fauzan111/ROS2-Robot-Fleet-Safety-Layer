@@ -23,6 +23,7 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from rclpy.time import Time
 from sensor_msgs.msg import CameraInfo, Image
+from geometry_msgs.msg import Pose, PoseArray
 from std_msgs.msg import Float32, String
 from tf2_ros import Buffer, TransformListener
 
@@ -72,6 +73,8 @@ class SafetyMonitor(Node):
         self.tf_listener = TransformListener(self.tf_buffer, self)
         self.state_pub = self.create_publisher(String, "safety/state", 10)
         self.annotated_pub = self.create_publisher(Image, "safety/annotated", 2)
+        # Every processed frame, even with nobody seen: what the detector believed (base_link).
+        self.persons_pub = self.create_publisher(PoseArray, "safety/persons", 10)
         self.create_subscription(CameraInfo, "camera/camera_info", self.on_info, 1)
         self.create_subscription(Image, "camera/depth/image_raw", self.on_depth,
                                  qos_profile_sensor_data)
@@ -123,6 +126,15 @@ class SafetyMonitor(Node):
         decision = zone_decision([pb for _, pb in located], self.stop_zone, self.warn_zone)
         self.in_stop, self.in_warn = decision.in_stop_zone, decision.in_warning_zone
         self.last_frame_t = self.now_s()
+        persons = PoseArray()
+        persons.header.stamp = msg.header.stamp
+        persons.header.frame_id = self.base_frame
+        for _, pb in located:
+            pose = Pose()
+            pose.position.x, pose.position.y, pose.position.z = pb
+            pose.orientation.w = 1.0
+            persons.poses.append(pose)
+        self.persons_pub.publish(persons)
         if self.annotated_pub.get_subscription_count() > 0:
             self._publish_annotated(msg, bgr, detections, located)
 
