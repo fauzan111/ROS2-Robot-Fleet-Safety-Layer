@@ -25,9 +25,13 @@ def main() -> None:
     ap.add_argument("--people", default="none")
     ap.add_argument("--stop-zone", type=float, nargs=2, default=[1.0, 0.4],
                     metavar=("LENGTH", "HALF_WIDTH"))
+    ap.add_argument("--window", type=float, nargs=2, metavar=("START", "END"),
+                    help="score only records with START <= t <= END (sim seconds)")
     args, _ = ap.parse_known_args()
 
     records = [json.loads(line) for line in Path(args.log).read_text().splitlines() if line]
+    if args.window:
+        records = [r for r in records if args.window[0] <= r["t"] <= args.window[1]]
     people = {}
     if args.people != "none":
         people = {n: p["waypoints"]

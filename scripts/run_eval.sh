@@ -33,6 +33,9 @@ while any_running; do
   fi
   sleep 2
 done
-kill -INT $REC_PID; wait $REC_PID 2>/dev/null
+# Stop the recorder. `ros2 run` does not reliably pass SIGINT on (the first run hung here),
+# so signal the node process itself; its log is line-buffered, so nothing is lost.
+pkill -INT -f "safety_recorder --ros-args" ; sleep 2; pkill -KILL -f "safety_recorder --ros-args"
+kill $REC_PID 2>/dev/null
 for r in $ROBOTS; do tail -1 "$RESULTS/eval_${TAG}_mission_$r.log"; done
 ros2 run fleet_bringup safety_report "$RESULTS/safety_log_$TAG.jsonl" --people "$PEOPLE"

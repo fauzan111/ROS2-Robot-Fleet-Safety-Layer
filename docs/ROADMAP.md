@@ -74,6 +74,22 @@
 - [ ] OOD score and slow mode
 - [ ] Measure stop latency and false stops
 
+### Week 3 notes
+
+- Each robot has an RGB-D camera (5 Hz, 320x240) at the URDF's camera_rgb_frame; two scripted
+  walking people (Gazebo actors) give exact ground truth. Detector: YOLOv4-tiny via OpenCV
+  DNN, 2 threads per robot. Cameras at 10 Hz dropped the sim to 0.84x real time and Nav2's
+  collision monitor stopped robots on stale scans; 5 Hz keeps it at ~1.0x.
+- `make eval-crossing` (robot1 shuttling while two people cross its corridor; scored against
+  ground truth, time base checked: detections match the scripted paths best at 0 s offset,
+  median 0.21 m): 13 true stop-zone entries, **4 missed**, 6 while already stopped; stop
+  command latency median 0.56 s (n=3); localisation error median 0.20 m; 0 false stops.
+- Camera recall for a person in the corridor ahead: 0-0.5 m 1/15, 0.5-1.0 m 7/56,
+  1.0-1.5 m 24/117, 1.5-2.0 m 12/14, 2.0-2.5 m 36/59. All misses were close side entries.
+  Cause: a 60 deg camera covers the 0.8 m-wide stop zone fully only beyond ~0.76 m, and up
+  close it sees only legs at the image edge. **About half the protective field is blind to
+  the camera.** Fix: 360 deg lidar for the near field (unknown obstacle = not on the map).
+
 ## Week 4: polish
 
 - [x] Fault injection: kill safety_monitor and show the fail-safe stop (done in week 2)
