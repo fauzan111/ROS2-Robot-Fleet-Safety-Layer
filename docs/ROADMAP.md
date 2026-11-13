@@ -68,11 +68,11 @@
 
 ## Week 3: safety layer
 
-- [ ] Bridge the camera to ROS and show it in Foxglove (the waffle's depth camera topic is
-      not namespaced in the upstream model, so each robot needs its own camera topic)
-- [ ] Person detector on the camera; zone check in the map frame
-- [ ] OOD score and slow mode
-- [ ] Measure stop latency and false stops
+- [x] Camera per robot (RGB-D, namespaced) and walking people in the world
+- [x] Person detector on the camera; stop and warning zones in base_link
+- [x] Lidar near field for the part of the stop zone the camera cannot see
+- [x] OOD score and slow mode
+- [x] Measure stop latency, missed entries and false stops against ground truth
 
 ### Week 3 notes
 
@@ -105,6 +105,15 @@
   A quick retune (BaseObstacle 0.08, cost scaling 2.0) freed robot2 but made robots hesitate
   in the 0.8 m gaps (50-72 s per centre goal), so it was reverted. Open item: Nav2 clearance
   tuning or corner waypoints, separate from the safety layer.
+
+- OOD (`scripts/ood_eval.py`, 210 clean frames from 3 robots, 6 synthetic corruptions):
+  mean AUROC image statistics + Mahalanobis 0.93, MobileNetV2 features + Mahalanobis 0.80,
+  ImageNet energy score 0.45. The energy score fails because simulated frames are already
+  unfamiliar to an ImageNet classifier. Clean frames drift during a mission: the usual
+  95th-percentile threshold flagged 21% of later clean frames, so the deployed threshold is
+  1.5x the highest validation score (0% clean flagged; fog, dark, noise 100%, smudge 60%,
+  blur and overexposure 12%). Live: clean run 0 OOD slow-downs; injected fog -> SLOW
+  throughout, route 362 s instead of 112 s, 6/6 goals.
 
 ## Week 4: polish
 

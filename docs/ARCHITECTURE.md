@@ -73,3 +73,33 @@ fleet_tf_relay: /robotN/tf -> /tf as robotN/<frame> under "world" (Foxglove flee
   at the spawn pose; `fleet_monitor` transforms it to the world frame with each spawn pose and
   counts a near miss below 0.5 m centre-to-centre, with 0.1 m hysteresis so one close pass is
   one event.
+
+## Safety layer (week 3)
+
+```
+camera (RGB-D, 5 Hz) --> YOLOv4-tiny --> person boxes + depth --> base_link points --+
+                    \--> image statistics --> Mahalanobis --> OOD? -----------------+--> state machine
+lidar (360 deg)      --> returns in stop zone, not on static map, not a fleet robot -+    --> speed scale
+```
+
+| Input | Effect |
+|---|---|
+| Person (camera) in the warning zone (2.0 m x +-0.6 m) | SLOW (30 %) |
+| Person (camera) in the stop zone (1.0 m x +-0.4 m) | STOP |
+| Unknown lidar return in the stop zone | STOP |
+| Out-of-distribution camera frame | SLOW |
+| No camera frame or no evaluated scan for 0.5 s | STOP |
+
+- **Why two sensors.** Measured, not assumed: the 60 deg camera covers the stop zone's full
+  width only beyond ~0.76 m, and up close it sees only legs at the image edge. Alone it missed
+  4 of 13 close side entries; with the lidar near field, 0 of 16. The camera's job is
+  recognising a person at 2-3 m and slowing early; the lidar protects up close.
+- **Other robots are not "unknown obstacles".** Each monitor ignores lidar returns near the
+  other robots' AMCL poses; otherwise two robots facing each other would stop forever.
+  Robot-robot spacing stays with Nav2 and is tracked by the near-miss metric.
+- **The OOD threshold favours availability.** A detector that slows the robot on a fifth of
+  clean frames would be switched off in practice, so the threshold sits above every clean
+  validation frame; blur and overexposure are mostly missed (documented in the roadmap).
+- **Ground truth for every metric.** People walk scripted loops, so their position is known
+  exactly at every sim time; robot poses come from Gazebo. `safety_eval` checks the time
+  base (detections match the scripted paths best at 0 s offset).

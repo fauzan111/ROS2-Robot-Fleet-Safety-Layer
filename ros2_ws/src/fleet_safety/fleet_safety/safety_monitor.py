@@ -12,6 +12,9 @@ With perception:=true (the fleet launch):
   (and not on another fleet robot, whose poses come from their AMCL) -> STOP. Measured: the
   60 deg camera covers the full stop-zone width only beyond ~0.76 m and missed 4 of 13
   close side entries on its own;
+- an out-of-distribution frame (fog, darkness, noise, dirt on the lens: Mahalanobis distance
+  on image statistics, fleet_ml/models/ood_stats.json) -> SLOW, since the detector may be
+  blind; ood_inject:=<fog|dark|noise|smudge|blur|overexposed> degrades frames for testing;
 - no camera frame for camera_timeout_s, or no evaluated scan for lidar_timeout_s -> STOP:
   a blind sensor must not let the robot drive.
 
@@ -68,6 +71,17 @@ class SafetyMonitor(Node):
         self.camera_timeout_s = float(p("camera_timeout_s", 0.5).value)
         self.base_frame = p("base_frame", "base_link").value
         self.machine = SafetyStateMachine(clear_for_s=float(p("clear_for_s", 1.0).value))
+        import json
+        from pathlib import Path as _Path
+
+        from fleet_ml.ood import Mahalanobis
+        ood_file = p("ood_model", "/opt/fleet_ml/fleet_ml/models/ood_stats.json").value
+        ood_cfg = json.loads(_Path(ood_file).read_text())
+        self.ood_model = Mahalanobis.from_dict(ood_cfg["model"])
+        self.ood_threshold = float(ood_cfg["threshold"])
+        self.ood_inject = p("ood_inject", "").value
+        self.ood = False
+        self.ood_pub = self.create_publisher(Float32, "safety/ood_score", 10)
         self.lidar = bool(p("lidar_near_field", True).value)
         self.lidar_timeout_s = float(p("lidar_timeout_s", 0.5).value)
         self.lidar_min_points = int(p("lidar_min_points", 3).value)
@@ -182,7 +196,13 @@ class SafetyMonitor(Node):
         cam_to_base = self._camera_to_base(msg.header.frame_id)
         if cam_to_base is None:
             return
+        from fleet_ml.ood import corrupt, image_stats
         bgr = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+        if self.ood_inject:
+            bgr = corrupt(bgr, self.ood_inject)
+        ood_score = float(self.ood_model.score(image_stats(bgr))[0])
+        self.ood = ood_score > self.ood_threshold
+        self.ood_pub.publish(Float32(data=ood_score))
         detections = self.detector(bgr)
         located = []
         for det in detections:
@@ -216,13 +236,17 @@ class SafetyMonitor(Node):
             scale, state = 0.0, "lidar_timeout"
         else:
             lidar_stop = self.lidar and self.lidar_stop
-            scale = self.machine.update(t, self.in_stop or lidar_stop, slow=self.in_warn)
+            scale = self.machine.update(t, self.in_stop or lidar_stop,
+                                        slow=self.in_warn or self.ood)
             state = str(self.machine.state)
         if state != self.state:
             why = ""
             if state == "stop":
                 why = " [" + "+".join(s for s, on in (("camera", self.in_stop),
                                                      ("lidar", self.lidar and self.lidar_stop))
+                                      if on) + "]"
+            elif state == "slow":
+                why = " [" + "+".join(s for s, on in (("person", self.in_warn), ("ood", self.ood))
                                       if on) + "]"
             self.get_logger().info(f"safety state {self.state} -> {state}{why} (scale {scale})")
             self.state = state

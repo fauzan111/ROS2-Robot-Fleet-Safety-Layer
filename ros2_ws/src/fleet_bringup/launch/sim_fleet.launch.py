@@ -49,7 +49,7 @@ from fleet_bringup.sim_assets import (
 
 
 def _robot(name: str, spawn: dict, shares: dict, robot_description: str,
-           others: list[str]) -> GroupAction:
+           others: list[str], ood_inject: str = "") -> GroupAction:
     bringup, ours, sim_dir = shares["nav2_bringup"], shares["fleet_bringup"], shares["sim"]
     params = write_fleet_params(
         os.path.join(bringup, "params", "nav2_multirobot_params_all.yaml"),
@@ -115,7 +115,7 @@ def _robot(name: str, spawn: dict, shares: dict, robot_description: str,
             package="fleet_safety", executable="safety_monitor", name="safety_monitor",
             namespace=name, output="screen", remappings=tf_remaps,
             parameters=[{"use_sim_time": True, "perception": True,
-                         "other_robots": others or [""]}],
+                         "other_robots": others or [""], "ood_inject": ood_inject}],
         ),
     ])
 
@@ -154,8 +154,10 @@ def _fleet(context):
         robot_description = f.read()
 
     names = list(cfg["robots"])
+    ood_inject = LaunchConfiguration("ood_inject").perform(context)
+    ood_inject = "" if ood_inject == "none" else ood_inject
     actions = [_robot(name, r["spawn"], shares, robot_description,
-                      [n for n in names if n != name])
+                      [n for n in names if n != name], ood_inject)
                for name, r in cfg["robots"].items()]
     # Visualisation only: merge the robots' TF trees under 'world' for Foxglove.
     actions.append(Node(
@@ -183,6 +185,8 @@ def generate_launch_description():
         DeclareLaunchArgument("people_file",
                               default_value=os.path.join(ours, "config", "people.yaml"),
                               description="Walking people (Gazebo actors) file, or 'none'"),
+        DeclareLaunchArgument("ood_inject", default_value="none",
+                              description="Test: degrade camera frames (fog, dark, smudge, ...)"),
         DeclareLaunchArgument("foxglove", default_value="True",
                               description="Start Foxglove bridge"),
         # Gazebo must find the TurtleBot world and robot models (set before Gazebo starts).

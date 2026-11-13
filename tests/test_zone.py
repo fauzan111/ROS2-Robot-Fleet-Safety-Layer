@@ -55,3 +55,37 @@ def test_leaving_stop_goes_to_slow_if_slow_reason_is_recent():
 
 def test_energy_score_higher_for_uncertain_logits():
     assert energy_score(np.array([[10.0, 0, 0]]))[0] < energy_score(np.array([[0.1, 0, 0.05]]))[0]
+
+
+def test_auroc_extremes_and_ties():
+    from fleet_ml.ood import auroc
+
+    assert auroc([0, 1, 2], [3, 4]) == 1.0
+    assert auroc([3, 4], [0, 1]) == 0.0
+    assert auroc([1, 1], [1, 1]) == 0.5
+
+
+def test_mahalanobis_flags_shifted_samples_and_roundtrips():
+    from fleet_ml.ood import Mahalanobis, auroc
+
+    rng = np.random.default_rng(0)
+    train = rng.normal(0, 1, (60, 100))          # fewer samples than dims: needs PCA+shrinkage
+    m = Mahalanobis(n_components=10).fit(train)
+    ind, ood = rng.normal(0, 1, (40, 100)), rng.normal(0, 1, (40, 100)) + 1.5
+    assert auroc(m.score(ind), m.score(ood)) > 0.95
+    m2 = Mahalanobis.from_dict(m.to_dict())
+    assert np.allclose(m.score(ind), m2.score(ind))
+
+
+def test_corruptions_change_image_statistics():
+    from fleet_ml.ood import CORRUPTIONS, corrupt, image_stats
+
+    rng = np.random.default_rng(1)
+    img = rng.integers(0, 256, (60, 80, 3), dtype=np.uint8)
+    base = image_stats(img)
+    for kind in CORRUPTIONS:
+        out = corrupt(img, kind)
+        assert out.shape == img.shape and out.dtype == np.uint8
+        assert not np.allclose(image_stats(out), base), kind
+    with pytest.raises(ValueError):
+        corrupt(img, "rain")

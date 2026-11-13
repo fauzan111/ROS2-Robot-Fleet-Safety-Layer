@@ -1,14 +1,15 @@
 #!/bin/bash
 # Run inside the container: a fleet scenario with the safety recorder, then score it.
-# Usage: run_eval.sh <tag> <fleet file> <people file | none>
+# Usage: run_eval.sh <tag> <fleet file> <people file | none> [ood_inject: fog|dark|... | none]
 TAG=${1:-crossing}
 FLEET=${2:-/ws/src/fleet_bringup/config/crossing.yaml}
 PEOPLE=${3:-/ws/src/fleet_bringup/config/people_crossing.yaml}
+OOD=${4:-none}
 RESULTS=/ws/results
 SIM_LOG=$RESULTS/sim_eval_$TAG.log
 mkdir -p "$RESULTS"
 
-ros2 launch fleet_bringup sim_fleet.launch.py fleet_file:="$FLEET" people_file:="$PEOPLE" \
+ros2 launch fleet_bringup sim_fleet.launch.py fleet_file:="$FLEET" people_file:="$PEOPLE" ood_inject:="$OOD" \
   > "$SIM_LOG" 2>&1 &
 SIM_PID=$!
 ros2 run fleet_bringup safety_recorder --ros-args -p use_sim_time:=true \
