@@ -6,10 +6,9 @@ FLEET=${2:-/ws/src/fleet_bringup/config/crossing.yaml}
 PEOPLE=${3:-/ws/src/fleet_bringup/config/people_crossing.yaml}
 RESULTS=/ws/results
 SIM_LOG=$RESULTS/sim_eval_$TAG.log
-PEOPLE_ARG=$PEOPLE; [ "$PEOPLE" = "none" ] && PEOPLE_ARG=""
 mkdir -p "$RESULTS"
 
-ros2 launch fleet_bringup sim_fleet.launch.py fleet_file:="$FLEET" people_file:="$PEOPLE_ARG" \
+ros2 launch fleet_bringup sim_fleet.launch.py fleet_file:="$FLEET" people_file:="$PEOPLE" \
   > "$SIM_LOG" 2>&1 &
 SIM_PID=$!
 ros2 run fleet_bringup safety_recorder --ros-args -p use_sim_time:=true \

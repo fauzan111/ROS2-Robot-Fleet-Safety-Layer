@@ -126,7 +126,7 @@ def _world(context):
     world = xacro.process_file(os.path.join(sim_dir, "worlds", "tb3_sandbox.sdf.xacro"),
                                mappings={"headless": "True"}).toxml()
     people_file = LaunchConfiguration("people_file").perform(context)
-    if people_file:
+    if people_file and people_file != "none":
         people = yaml.safe_load(Path(people_file).read_text())
         world = with_actors(world, [actor_sdf(name, p["waypoints"], people["mesh"])
                                     for name, p in people["people"].items()])
@@ -182,7 +182,7 @@ def generate_launch_description():
         DeclareLaunchArgument("results_dir", default_value="/ws/results"),
         DeclareLaunchArgument("people_file",
                               default_value=os.path.join(ours, "config", "people.yaml"),
-                              description="Walking people (Gazebo actors); '' for none"),
+                              description="Walking people (Gazebo actors) file, or 'none'"),
         DeclareLaunchArgument("foxglove", default_value="True",
                               description="Start Foxglove bridge"),
         # Gazebo must find the TurtleBot world and robot models (set before Gazebo starts).

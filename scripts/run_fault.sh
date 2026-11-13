@@ -9,7 +9,7 @@ SIM_LOG=$RESULTS/sim_fault.log
 mkdir -p "$RESULTS"
 
 # No people: this test isolates the gate's reaction to a dead monitor from perception stops.
-ros2 launch fleet_bringup sim_fleet.launch.py fleet_file:="$FLEET" people_file:="" > "$SIM_LOG" 2>&1 &
+ros2 launch fleet_bringup sim_fleet.launch.py fleet_file:="$FLEET" people_file:=none > "$SIM_LOG" 2>&1 &
 SIM_PID=$!
 ROBOTS=$(python3 -c "import sys, yaml; print(' '.join(yaml.safe_load(open(sys.argv[1]))['robots']))" "$FLEET")
 PIDS=()

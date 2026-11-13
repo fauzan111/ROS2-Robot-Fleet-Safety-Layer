@@ -96,6 +96,15 @@
   3 robot-minutes (too few minutes to quote a rate). Stops: 18 lidar-only, 4 both, 0
   camera-only. Up close the lidar protects; the camera's job is recognising a person at
   2-3 m and slowing early, the same split real AMR safety uses.
+- `make eval-false-stops` (three robots, no people): **0 false stops in 24.5 robot-minutes**,
+  and robots never stopped for each other (their AMCL poses are excluded). Caveat: robot1 and
+  robot2 got pinned against pillars (-1.1, -1.1) and (1.1, 1.1) after their first goal, so
+  much of that time they stood still; the safety state stayed NORMAL throughout. It is the
+  same spot as week 2's 13/14 run: the straight line from the centre goals to the corner goals
+  runs through a pillar and upstream DWB (PathAlign 32 vs BaseObstacle 0.02) cuts the corner.
+  A quick retune (BaseObstacle 0.08, cost scaling 2.0) freed robot2 but made robots hesitate
+  in the 0.8 m gaps (50-72 s per centre goal), so it was reverted. Open item: Nav2 clearance
+  tuning or corner waypoints, separate from the safety layer.
 
 ## Week 4: polish
 
