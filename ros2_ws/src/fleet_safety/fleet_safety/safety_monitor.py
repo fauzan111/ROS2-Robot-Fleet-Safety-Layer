@@ -8,7 +8,12 @@ With perception:=true (the fleet launch):
   from the aligned depth image and is transformed into base_link (fleet_ml.perception);
 - a person in the stop zone (default 1.0 m ahead, +-0.4 m) -> STOP; in the warning zone
   (2.0 m, +-0.6 m) -> SLOW (30%); leaving STOP needs 1 s clear (fleet_ml.zone hysteresis);
-- no camera frame for camera_timeout_s -> STOP: a blind detector must not let the robot drive.
+- near field: any 360 deg lidar return inside the stop zone that is not on the static map
+  (and not on another fleet robot, whose poses come from their AMCL) -> STOP. Measured: the
+  60 deg camera covers the full stop-zone width only beyond ~0.76 m and missed 4 of 13
+  close side entries on its own;
+- no camera frame for camera_timeout_s, or no evaluated scan for lidar_timeout_s -> STOP:
+  a blind sensor must not let the robot drive.
 
 With perception:=false (default, the single-robot setup): pass-through scale 1.0.
 """
@@ -22,13 +27,15 @@ from cv_bridge import CvBridge
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from rclpy.time import Time
-from sensor_msgs.msg import CameraInfo, Image
-from geometry_msgs.msg import Pose, PoseArray
+from sensor_msgs.msg import CameraInfo, Image, LaserScan
+from geometry_msgs.msg import Pose, PoseArray, PoseWithCovarianceStamped
+from nav_msgs.msg import OccupancyGrid
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Float32, String
 from tf2_ros import Buffer, TransformListener
 
 COLORS = {"normal": (0, 200, 0), "slow": (0, 200, 255), "stop": (0, 0, 255),
-          "camera_timeout": (255, 0, 255)}
+          "camera_timeout": (255, 0, 255), "lidar_timeout": (255, 0, 255)}
 
 
 class SafetyMonitor(Node):
@@ -61,6 +68,18 @@ class SafetyMonitor(Node):
         self.camera_timeout_s = float(p("camera_timeout_s", 0.5).value)
         self.base_frame = p("base_frame", "base_link").value
         self.machine = SafetyStateMachine(clear_for_s=float(p("clear_for_s", 1.0).value))
+        self.lidar = bool(p("lidar_near_field", True).value)
+        self.lidar_timeout_s = float(p("lidar_timeout_s", 0.5).value)
+        self.lidar_min_points = int(p("lidar_min_points", 3).value)
+        self.map_inflate_m = float(p("map_inflate_m", 0.15).value)
+        self.exclusion_m = float(p("robot_exclusion_m", 0.35).value)
+        self.other_robots = [r for r in p("other_robots", [""]).value if r]
+        self.map_frame = p("map_frame", "map").value
+        self.static_mask = None
+        self.map_info = None
+        self.others_xy: dict[str, tuple[float, float]] = {}
+        self.lidar_stop = False
+        self.last_scan_t: float | None = None
 
         self.bridge = CvBridge()
         self.k: list[float] | None = None
@@ -80,8 +99,17 @@ class SafetyMonitor(Node):
                                  qos_profile_sensor_data)
         self.create_subscription(Image, "camera/image_raw", self.on_image,
                                  qos_profile_sensor_data)
+        if self.lidar:
+            latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL,
+                                 reliability=ReliabilityPolicy.RELIABLE)
+            self.create_subscription(OccupancyGrid, "map", self.on_map, latched)
+            self.create_subscription(LaserScan, "scan", self.on_scan, qos_profile_sensor_data)
+            for other in self.other_robots:
+                self.create_subscription(PoseWithCovarianceStamped, f"/{other}/amcl_pose",
+                                         lambda m, o=other: self.on_other(o, m), 10)
         self.get_logger().info(f"safety_monitor: heartbeat {rate_hz:.0f} Hz, perception on, "
-                               f"stop zone {stop}, warning zone {warn}")
+                               f"stop zone {stop}, warning zone {warn}, lidar near field "
+                               f"{'on' if self.lidar else 'off'} (others: {self.other_robots})")
 
     def now_s(self) -> float:
         return self.get_clock().now().nanoseconds / 1e9
@@ -91,6 +119,44 @@ class SafetyMonitor(Node):
 
     def on_depth(self, msg: Image) -> None:
         self.depth = self.bridge.imgmsg_to_cv2(msg, "32FC1")
+
+    def on_map(self, msg: OccupancyGrid) -> None:
+        from fleet_ml.perception import static_obstacle_mask
+        grid = np.array(msg.data, dtype=np.int16).reshape(msg.info.height, msg.info.width)
+        self.static_mask = static_obstacle_mask(grid, msg.info.resolution, self.map_inflate_m)
+        self.map_info = msg.info
+
+    def on_other(self, robot: str, msg: PoseWithCovarianceStamped) -> None:
+        self.others_xy[robot] = (msg.pose.pose.position.x, msg.pose.pose.position.y)
+
+    def _lookup(self, target: str, source: str) -> np.ndarray | None:
+        from fleet_ml.perception import transform_from_quaternion
+        try:
+            tf = self.tf_buffer.lookup_transform(target, source, Time())
+        except Exception:  # noqa: BLE001 - not available yet (e.g. AMCL starting)
+            return None
+        t, q = tf.transform.translation, tf.transform.rotation
+        return transform_from_quaternion((t.x, t.y, t.z), (q.x, q.y, q.z, q.w))
+
+    def on_scan(self, msg: LaserScan) -> None:
+        from fleet_ml.perception import scan_to_points, unknown_obstacle_points
+        if self.static_mask is None:
+            return
+        base_scan = self._lookup(self.base_frame, msg.header.frame_id)
+        map_base = self._lookup(self.map_frame, self.base_frame)
+        if base_scan is None or map_base is None:
+            return  # scan not evaluated -> lidar_timeout -> STOP (fail-safe)
+        pts = scan_to_points(msg.ranges, msg.angle_min, msg.angle_increment,
+                             msg.range_min, msg.range_max)
+        homo = np.column_stack((pts, np.zeros(len(pts)), np.ones(len(pts))))
+        p_base = (base_scan @ homo.T).T
+        p_map = (map_base @ p_base.T).T
+        o = self.map_info.origin.position
+        unknown = unknown_obstacle_points(
+            p_base[:, :2], p_map[:, :2], self.stop_zone, self.static_mask, (o.x, o.y),
+            self.map_info.resolution, list(self.others_xy.values()), self.exclusion_m)
+        self.lidar_stop = len(unknown) >= self.lidar_min_points
+        self.last_scan_t = self.now_s()
 
     def _camera_to_base(self, frame_id: str) -> np.ndarray | None:
         if self.cam_to_base is None:
@@ -145,11 +211,20 @@ class SafetyMonitor(Node):
         t = self.now_s()
         if self.last_frame_t is None or t - self.last_frame_t > self.camera_timeout_s:
             scale, state = 0.0, "camera_timeout"
+        elif self.lidar and (self.last_scan_t is None
+                             or t - self.last_scan_t > self.lidar_timeout_s):
+            scale, state = 0.0, "lidar_timeout"
         else:
-            scale = self.machine.update(t, self.in_stop, slow=self.in_warn)
+            lidar_stop = self.lidar and self.lidar_stop
+            scale = self.machine.update(t, self.in_stop or lidar_stop, slow=self.in_warn)
             state = str(self.machine.state)
         if state != self.state:
-            self.get_logger().info(f"safety state {self.state} -> {state} (scale {scale})")
+            why = ""
+            if state == "stop":
+                why = " [" + "+".join(s for s, on in (("camera", self.in_stop),
+                                                     ("lidar", self.lidar and self.lidar_stop))
+                                      if on) + "]"
+            self.get_logger().info(f"safety state {self.state} -> {state}{why} (scale {scale})")
             self.state = state
         self.scale_pub.publish(Float32(data=float(scale)))
         self.state_pub.publish(String(data=state))

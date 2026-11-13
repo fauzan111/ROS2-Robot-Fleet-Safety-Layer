@@ -53,3 +53,28 @@ def test_zone_decision_stop_warning_and_clear():
     d = zone_decision([(3.0, 0.0, 0), (0.5, 1.5, 0)], stop, warn)  # far, or off to the side
     assert not d.in_warning_zone
     assert zone_decision([], stop, warn).nearest_m is None
+
+
+def test_scan_to_points_drops_invalid_returns():
+    from fleet_ml.perception import scan_to_points
+
+    pts = scan_to_points([1.0, float("inf"), 0.05, 2.0], -math.pi / 2, math.pi / 2, 0.12, 3.5)
+    assert pts == pytest.approx(np.array([[0.0, -1.0], [-2.0, 0.0]]), abs=1e-9)  # -90, 180 deg
+
+
+def test_unknown_obstacles_ignore_map_walls_and_other_robots():
+    from fleet_ml.perception import static_obstacle_mask, unknown_obstacle_points
+
+    occ = np.zeros((40, 40), dtype=int)       # 2 m x 2 m map at 5 cm, origin (0, 0)
+    occ[:, 30] = 100                          # a wall at x = 1.5 m
+    mask = static_obstacle_mask(occ, 0.05, inflate_m=0.1)
+    zone = rectangle_zone(1.0, 0.4)
+    # robot at map (0.8, 1.0) facing +x: base = map - (0.8, 1.0)
+    base = np.array([[0.5, 0.35],   # unknown object ahead      -> kept
+                     [0.7, 0.1],    # hits the wall (x=1.5 map) -> static
+                     [0.4, -0.2],   # another robot             -> excluded
+                     [1.5, 0.0]])   # outside the stop zone
+    mp = base + np.array([0.8, 1.0])
+    out = unknown_obstacle_points(base, mp, zone, mask, (0.0, 0.0), 0.05,
+                                  exclude_xy=[(1.2, 0.8)])
+    assert out.tolist() == [[0.5, 0.35]]

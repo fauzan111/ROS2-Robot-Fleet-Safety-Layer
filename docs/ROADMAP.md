@@ -89,6 +89,13 @@
   Cause: a 60 deg camera covers the 0.8 m-wide stop zone fully only beyond ~0.76 m, and up
   close it sees only legs at the image edge. **About half the protective field is blind to
   the camera.** Fix: 360 deg lidar for the near field (unknown obstacle = not on the map).
+- Lidar near field added: any scan return in the stop zone that is not on the static map
+  (inflated 0.15 m) and not on another fleet robot (from their AMCL poses) -> STOP. Re-run:
+  16 true entries, **0 missed**; stop command latency median 0.13 s, halt median 0.46 s
+  (n=3 each; most entries came while the robot was already stopped); 1 false stop in
+  3 robot-minutes (too few minutes to quote a rate). Stops: 18 lidar-only, 4 both, 0
+  camera-only. Up close the lidar protects; the camera's job is recognising a person at
+  2-3 m and slowing early, the same split real AMR safety uses.
 
 ## Week 4: polish
 
