@@ -7,6 +7,9 @@
 - actor_sdf / with_actors: walking people (Gazebo actors) on scripted, looping trajectories,
   injected into the world. Scripted motion makes the ground truth exact: where a person is at
   any sim time follows from the waypoints, which is what stop-latency measurement needs.
+- overhead_camera_sdf / project_overhead: a fixed camera looking straight down on the arena,
+  for the demo video only (no robot uses it), and the matching world -> pixel projection so
+  zones and labels can be drawn on its frames.
 """
 
 from __future__ import annotations
@@ -95,10 +98,51 @@ def actor_sdf(name: str, waypoints: list[dict], mesh: str) -> str:
 
 
 def with_actors(world_sdf: str, actors_xml: list[str]) -> str:
+    """Insert actors (or any world-level elements) just before </world>."""
     idx = world_sdf.rfind("</world>")
     if idx < 0:
         raise ValueError("no </world> tag in world SDF")
     return world_sdf[:idx] + "\n".join(actors_xml) + "\n  " + world_sdf[idx:]
+
+
+OVERHEAD = {"height_m": 6.5, "size_px": 600, "hfov": 0.9}
+
+
+def overhead_camera_sdf(topic: str = "demo/overhead", rate_hz: float = 5.0,
+                        height_m: float = OVERHEAD["height_m"],
+                        size_px: int = OVERHEAD["size_px"],
+                        hfov: float = OVERHEAD["hfov"]) -> str:
+    """A static camera above the world origin looking straight down.
+
+    Pose rpy (0, pi/2, pi/2): the camera's view axis (+x) points down, image up is world +y
+    and image right is world +x, so the frame reads like a map.
+    """
+    return f"""<model name="demo_overhead_camera">
+      <static>true</static>
+      <pose>0 0 {height_m} 0 1.5707963 1.5707963</pose>
+      <link name="link">
+        <sensor name="overhead" type="camera">
+          <always_on>1</always_on>
+          <update_rate>{rate_hz}</update_rate>
+          <topic>{escape(topic)}</topic>
+          <camera>
+            <horizontal_fov>{hfov}</horizontal_fov>
+            <image><width>{size_px}</width><height>{size_px}</height><format>R8G8B8</format></image>
+            <clip><near>0.1</near><far>{height_m + 2}</far></clip>
+          </camera>
+        </sensor>
+      </link>
+    </model>"""
+
+
+def project_overhead(x: float, y: float, z: float = 0.0,
+                     height_m: float = OVERHEAD["height_m"],
+                     size_px: int = OVERHEAD["size_px"],
+                     hfov: float = OVERHEAD["hfov"]) -> tuple[float, float]:
+    """World point -> (u, v) pixel in the overhead image (pinhole, square pixels)."""
+    f = (size_px / 2) / math.tan(hfov / 2)
+    d = height_m - z
+    return size_px / 2 + f * x / d, size_px / 2 - f * y / d
 
 
 def person_position(waypoints: list[dict], t: float) -> tuple[float, float]:

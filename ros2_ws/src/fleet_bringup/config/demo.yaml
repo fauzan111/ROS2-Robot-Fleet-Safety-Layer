@@ -1,0 +1,34 @@
+# Demo video scenario (make demo). Routes stay on straight free lanes so nothing depends on
+# Nav2 cutting corners round the pillars (the open clearance item in docs/ROADMAP.md).
+#   robot1 shuttles the y = -0.5 corridor that the two people from people_crossing.yaml cross:
+#          slow at 2 m, stop at 1 m, resume.
+#   robot2 shuttles the north lane (y = 1.65): demo_director kills its safety_monitor.
+#   robot3 shuttles the south lane (y = -2.0, clear of the slanted walls and of the people
+#          waiting at y = -1.35): demo_director fogs its camera (OOD -> SLOW).
+timeout_s: 120
+near_miss_m: 0.5
+
+robots:
+  robot1:
+    spawn: {x: -2.0, y: -0.5, yaw: 0.0}
+    goals:
+      - {name: east_1, x: 1.6, y: -0.5, yaw: 3.14}
+      - {name: west_1, x: -1.8, y: -0.5, yaw: 0.0}
+      - {name: east_2, x: 1.6, y: -0.5, yaw: 3.14}
+      - {name: west_2, x: -1.8, y: -0.5, yaw: 0.0}
+  robot2:
+    spawn: {x: 1.5, y: 1.65, yaw: 3.14}
+    goals:
+      - {name: west_1, x: -1.4, y: 1.65, yaw: 0.0}
+      - {name: east_1, x: 1.4, y: 1.65, yaw: 3.14}
+      - {name: west_2, x: -1.4, y: 1.65, yaw: 0.0}
+      - {name: east_2, x: 1.4, y: 1.65, yaw: 3.14}
+  robot3:
+    spawn: {x: -0.95, y: -2.0, yaw: 0.0}
+    goals:
+      - {name: east_1, x: 0.95, y: -2.0, yaw: 3.14}
+      - {name: west_1, x: -0.95, y: -2.0, yaw: 0.0}
+      - {name: east_2, x: 0.95, y: -2.0, yaw: 3.14}
+      - {name: west_2, x: -0.95, y: -2.0, yaw: 0.0}
+      - {name: east_3, x: 0.95, y: -2.0, yaw: 3.14}
+      - {name: west_3, x: -0.95, y: -2.0, yaw: 0.0}

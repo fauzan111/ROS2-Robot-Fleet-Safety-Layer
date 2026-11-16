@@ -14,7 +14,8 @@ With perception:=true (the fleet launch):
   close side entries on its own;
 - an out-of-distribution frame (fog, darkness, noise, dirt on the lens: Mahalanobis distance
   on image statistics, fleet_ml/models/ood_stats.json) -> SLOW, since the detector may be
-  blind; ood_inject:=<fog|dark|noise|smudge|blur|overexposed> degrades frames for testing;
+  blind; ood_inject:=<fog|dark|noise|smudge|blur|overexposed> degrades frames for testing
+  (also settable at runtime: ros2 param set /robotN/safety_monitor ood_inject fog);
 - no camera frame for camera_timeout_s, or no evaluated scan for lidar_timeout_s -> STOP:
   a blind sensor must not let the robot drive.
 
@@ -27,6 +28,7 @@ import cv2
 import numpy as np
 import rclpy
 from cv_bridge import CvBridge
+from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from rclpy.time import Time
@@ -80,6 +82,7 @@ class SafetyMonitor(Node):
         self.ood_model = Mahalanobis.from_dict(ood_cfg["model"])
         self.ood_threshold = float(ood_cfg["threshold"])
         self.ood_inject = p("ood_inject", "").value
+        self.add_on_set_parameters_callback(self.on_set_params)
         self.ood = False
         self.ood_pub = self.create_publisher(Float32, "safety/ood_score", 10)
         self.lidar = bool(p("lidar_near_field", True).value)
@@ -127,6 +130,18 @@ class SafetyMonitor(Node):
 
     def now_s(self) -> float:
         return self.get_clock().now().nanoseconds / 1e9
+
+    def on_set_params(self, params) -> SetParametersResult:
+        from fleet_ml.ood import CORRUPTIONS
+        for prm in params:
+            if prm.name == "ood_inject":
+                value = "" if prm.value in ("", "none") else str(prm.value)
+                if value and value not in CORRUPTIONS:
+                    return SetParametersResult(successful=False,
+                                               reason=f"ood_inject must be one of {CORRUPTIONS}")
+                self.ood_inject = value
+                self.get_logger().warn(f"ood_inject -> {value or 'none'}")
+        return SetParametersResult(successful=True)
 
     def on_info(self, msg: CameraInfo) -> None:
         self.k = list(msg.k)

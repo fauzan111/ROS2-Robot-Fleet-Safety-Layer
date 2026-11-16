@@ -8,7 +8,9 @@ ros2 launch fleet_bringup sim_one_robot.launch.py > "$SIM_LOG" 2>&1 &
 SIM_PID=$!
 ros2 run fleet_bringup mission_runner --ros-args -p use_sim_time:=true -p missions_file:="$MISSIONS" &
 MISSION_PID=$!
-trap 'kill $MISSION_PID $SIM_PID 2>/dev/null; wait 2>/dev/null' EXIT
+# Cleanup must not hang: an unbounded `wait` blocked on a child that ignored SIGTERM and
+# left a finished run's container burning CPU under the next test.
+trap 'kill $MISSION_PID $SIM_PID 2>/dev/null; sleep 3; kill -9 $MISSION_PID $SIM_PID 2>/dev/null' EXIT
 
 while kill -0 $MISSION_PID 2>/dev/null; do
   if ! kill -0 $SIM_PID 2>/dev/null; then

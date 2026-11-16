@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import math
+import signal
 import subprocess
 import time
 from datetime import datetime
@@ -27,6 +28,39 @@ from rclpy.node import Node
 from fleet_bringup.fault import analyze_fault
 
 
+def kill_monitor(robot: str) -> list[str]:
+    """SIGKILL robot's safety_monitor (no clean shutdown, like a real crash); returns pids."""
+    pattern = f"safety_monitor --ros-args.*__ns:=/{robot}( |$)"
+    pids = subprocess.run(["pgrep", "-f", pattern], capture_output=True,
+                          text=True).stdout.split()
+    subprocess.run(["pkill", "-KILL", "-f", pattern], check=False)
+    return pids
+
+
+def restart_monitor(robot: str, others: list[str], log_path: Path | None = None
+                    ) -> subprocess.Popen:
+    """Start robot's safety_monitor again with the same config as the fleet launch
+    (others: the other fleet robots, which the lidar near field must not stop for).
+
+    The monitor is detached from the calling ROS node: own session, empty signal mask, own
+    log file. Observed once (demo run, 2026-11-16): started as a plain child of the rclpy
+    director, the restarted monitor processed ~0.5 frames/s instead of 5 for minutes
+    (camera_timeout flapping, robot stuck), while monitors started from a shell in the same
+    run ran at full rate. The root cause is not proven; detaching removes everything the
+    child would inherit from the ROS process, and the restart rate is checked after each run.
+    """
+    log = open(log_path, "a") if log_path else subprocess.DEVNULL  # noqa: SIM115
+    return subprocess.Popen(
+        ["ros2", "run", "fleet_safety", "safety_monitor", "--ros-args",
+         "-r", f"__ns:=/{robot}", "-r", "__node:=safety_monitor",
+         "-r", "/tf:=tf", "-r", "/tf_static:=tf_static",
+         "-p", "use_sim_time:=true", "-p", "perception:=true",
+         "-p", "other_robots:=[" + (",".join(others) or "''") + "]"],
+        stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
+        start_new_session=True,
+        preexec_fn=lambda: signal.pthread_sigmask(signal.SIG_SETMASK, []))
+
+
 class FaultInjection(Node):
     def __init__(self) -> None:
         super().__init__("fault_injection")
@@ -39,6 +73,7 @@ class FaultInjection(Node):
         robots = list(yaml.safe_load(Path(fleet_file).read_text())["robots"])
         if self.target not in robots:
             raise ValueError(f"target {self.target} not in fleet {robots}")
+        self.others = [r for r in robots if r != self.target]
         self.speeds: dict[str, list[tuple[float, float]]] = {r: [] for r in robots}
         self.gate_out: list[tuple[float, float]] = []
         for r in robots:
@@ -90,21 +125,15 @@ class FaultInjection(Node):
             self.finish()
 
     def kill(self) -> None:
-        pattern = f"safety_monitor --ros-args.*__ns:=/{self.target}( |$)"
-        self.killed_pids = subprocess.run(["pgrep", "-f", pattern], capture_output=True,
-                                          text=True).stdout.split()
-        subprocess.run(["pkill", "-KILL", "-f", pattern], check=False)
+        self.killed_pids = kill_monitor(self.target)
         self.t_kill = self.now_s()
         self.state = "dead"
         self.get_logger().warn(f"KILLED {self.target}/safety_monitor (pids {self.killed_pids}) "
                                f"at t={self.t_kill:.2f} s")
 
     def restart(self) -> None:
-        self.monitor_proc = subprocess.Popen([
-            "ros2", "run", "fleet_safety", "safety_monitor", "--ros-args",
-            "-r", f"__ns:=/{self.target}", "-r", "__node:=safety_monitor",
-            "-r", "/tf:=tf", "-r", "/tf_static:=tf_static",
-            "-p", "use_sim_time:=true", "-p", "perception:=true"])  # same config as launch
+        self.monitor_proc = restart_monitor(self.target, self.others,
+                                            self.results_dir / f"restarted_monitor_{self.target}.log")
         self.t_restart = self.now_s()
         self.state = "restarted"
         self.get_logger().warn(f"restarted {self.target}/safety_monitor at "

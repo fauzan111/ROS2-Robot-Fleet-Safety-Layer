@@ -19,7 +19,9 @@ for r in $ROBOTS; do
     -p use_sim_time:=true -p missions_file:="$FLEET" > "$RESULTS/mission_$r.log" 2>&1 &
   PIDS+=($!)
 done
-trap 'kill "${PIDS[@]}" $SIM_PID 2>/dev/null; wait 2>/dev/null' EXIT
+# Cleanup must not hang: an unbounded `wait` blocked on a child that ignored SIGTERM and
+# left a finished run's container burning CPU under the next test.
+trap 'kill "${PIDS[@]}" $SIM_PID 2>/dev/null; sleep 3; kill -9 "${PIDS[@]}" $SIM_PID 2>/dev/null' EXIT
 echo "fleet: $ROBOTS (logs in $RESULTS/mission_<robot>.log, $SIM_LOG)"
 
 any_running() { for p in "${PIDS[@]}"; do kill -0 "$p" 2>/dev/null && return 0; done; return 1; }

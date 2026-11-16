@@ -18,7 +18,9 @@ for r in $ROBOTS; do
     -p use_sim_time:=true -p missions_file:="$FLEET" > "$RESULTS/fault_mission_$r.log" 2>&1 &
   PIDS+=($!)
 done
-trap 'kill "${PIDS[@]}" $SIM_PID 2>/dev/null; wait 2>/dev/null' EXIT
+# Cleanup must not hang: an unbounded `wait` blocked on a child that ignored SIGTERM and
+# left a finished run's container burning CPU under the next test.
+trap 'kill "${PIDS[@]}" $SIM_PID 2>/dev/null; sleep 3; kill -9 "${PIDS[@]}" $SIM_PID 2>/dev/null' EXIT
 
 ros2 run fleet_bringup fault_injection --ros-args -p use_sim_time:=true \
   -p fleet_file:="$FLEET" -p target:="$TARGET" &

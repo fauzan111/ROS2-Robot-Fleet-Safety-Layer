@@ -42,6 +42,7 @@ from launch_ros.actions import Node
 from fleet_bringup.params import write_fleet_params
 from fleet_bringup.sim_assets import (
     actor_sdf,
+    overhead_camera_sdf,
     with_actors,
     with_pose_publisher,
     with_rgbd_camera,
@@ -130,6 +131,15 @@ def _world(context):
         people = yaml.safe_load(Path(people_file).read_text())
         world = with_actors(world, [actor_sdf(name, p["waypoints"], people["mesh"])
                                     for name, p in people["people"].items()])
+    demo = LaunchConfiguration("demo").perform(context).lower() == "true"
+    extra = []
+    if demo:  # overhead camera for the demo video, bridged to /demo/overhead
+        world = with_actors(world, [overhead_camera_sdf()])
+        extra.append(Node(
+            package="ros_gz_bridge", executable="parameter_bridge", name="overhead_bridge",
+            arguments=["/demo/overhead@sensor_msgs/msg/Image[gz.msgs.Image"],
+            parameters=[{"use_sim_time": True}], output="screen",
+        ))
     with tempfile.NamedTemporaryFile("w", prefix="fleet_world_", suffix=".sdf",
                                      delete=False) as f:
         f.write(world)
@@ -138,6 +148,7 @@ def _world(context):
         ExecuteProcess(cmd=["gz", "sim", "-r", "-s", f.name], output="screen"),
         RegisterEventHandler(OnShutdown(on_shutdown=[OpaqueFunction(
             function=lambda _: os.path.exists(f.name) and os.remove(f.name))])),
+        *extra,
     ]
 
 
@@ -187,6 +198,8 @@ def generate_launch_description():
                               description="Walking people (Gazebo actors) file, or 'none'"),
         DeclareLaunchArgument("ood_inject", default_value="none",
                               description="Test: degrade camera frames (fog, dark, smudge, ...)"),
+        DeclareLaunchArgument("demo", default_value="False",
+                              description="Add the overhead camera used for the demo video"),
         DeclareLaunchArgument("foxglove", default_value="True",
                               description="Start Foxglove bridge"),
         # Gazebo must find the TurtleBot world and robot models (set before Gazebo starts).

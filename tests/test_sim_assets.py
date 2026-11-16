@@ -1,5 +1,6 @@
 """Simulation asset patching (fleet_bringup.sim_assets)."""
 
+import math
 import xml.dom.minidom
 
 import pytest
@@ -71,3 +72,17 @@ def test_pose_publisher_added_inside_model():
     xml.dom.minidom.parseString(out)
     with pytest.raises(ValueError, match="model"):
         with_pose_publisher("<sdf/>")
+
+
+def test_overhead_camera_is_wellformed_and_projection_reads_like_a_map():
+    from fleet_bringup.sim_assets import overhead_camera_sdf, project_overhead
+
+    xml.dom.minidom.parseString(overhead_camera_sdf())
+    assert project_overhead(0, 0) == pytest.approx((300, 300))
+    u, v = project_overhead(1.0, 1.0)
+    assert u > 300 and v < 300          # +x right, +y up
+    # a point on the ground at the image edge is height * tan(hfov / 2) from the centre
+    edge = 6.5 * math.tan(0.45)
+    assert project_overhead(edge, 0)[0] == pytest.approx(600)
+    # a point above the ground projects further out (closer to the camera)
+    assert project_overhead(1.0, 0, z=1.0)[0] > project_overhead(1.0, 0)[0]

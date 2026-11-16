@@ -13,7 +13,13 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=8.0", "ruff>=0.6"]
+dev = [
+    "imageio-ffmpeg>=0.8.1",
+    "pillow>=13.0.0",
+    "pytest>=8.0",
+    "rosbags>=0.11.9",
+    "ruff>=0.6",
+]
 
 [build-system]
 requires = ["hatchling"]

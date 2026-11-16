@@ -1,84 +1,143 @@
 # ROS 2 Robot Fleet with a Safety Layer
 
-A multi-robot ROS 2 / Nav2 fleet in simulation, guarded by a safety layer: each robot's camera recognises people and slows the robot early, a 360° lidar near field stops it for anything unknown in its protective zone, and a degraded camera image (fog, darkness, dirt) slows it down. The velocity gate is written in C++ and fails safe. Every number below is measured against simulation ground truth.
+Three simulated mobile robots run Nav2 missions while people walk through their lanes. Each robot has its own safety chain:
+- **Camera:** spots people and slows the robot early.
+- **360° lidar:** stops it for anything unknown in its protective zone.
+- **Degraded-image check:** slows it down when the camera image can't be trusted (fog, darkness, dirt on the lens).
+- **Fail-safe gate (C++):** stops the robot if the safety monitor goes quiet.
+
+Every number below is measured against simulator ground truth.
+
+![Demo: robot1 slows for a person 2 m ahead and stops when they enter the 1 m zone](docs/media/demo.gif)
+
+**[Full 2-minute demo video (MP4)](docs/media/demo.mp4)**. It shows people stops, a crashed safety monitor on robot2, and a fogged camera on robot3. It was rendered from a recorded run (`make demo && make render-demo`), and the captions come from the logged safety states.
+
+> A learning demonstrator, **not** a certified safety function. Real deployments need certified safety laser scanners and a safety PLC (ISO 13849 / IEC 61508).
 
 ## Why it matters
 
-Mobile robots are moving into Italian warehouses, airports and hospitals, and the EU Machinery Regulation (from 20 January 2027) adds requirements for machine-learning safety functions. Integrators need engineers who can combine ROS 2 navigation, perception and conservative safety logic.
+Mobile robots are moving into Italian warehouses, airports and hospitals. The EU Machinery Regulation 2023/1230 applies from 20 January 2027 and adds requirements for safety functions that use machine learning. Integrators need engineers who can combine ROS 2 navigation, perception and conservative safety logic, and who can measure how well the result works.
 
 **Relevant employers in Italy:** Comau, Alba Robot, Cyberwave, Oversonic, Teoresi, Fogliani
 
-## What it does
+## How it works
 
-- ROS 2 Jazzy + Nav2 + Gazebo in Docker (native arm64 on Apple Silicon); view in Foxglove
-- Three-robot fleet with waypoint missions
-- `safety_monitor` (Python, one per robot): YOLOv4-tiny person detection (OpenCV DNN) + depth
-  localisation, stop zone (1.0 m) and warning zone (2.0 m), lidar near field (returns not on
-  the static map), out-of-distribution frame check; any sensor going quiet means STOP
-- `speed_gate` (C++, rclcpp): scales Nav2 velocity commands; stops on a stale or missing safety signal
-- Hysteresis state machine so flickering detections cannot cause lurching
-- Ground-truth evaluation: scripted walking people + Gazebo poses -> stop latency, missed
-  entries, false stops, recall by distance (`make eval-crossing`, `make eval-false-stops`)
+```mermaid
+flowchart LR
+    subgraph robotN["each robot (namespace /robotN)"]
+        CAM[RGB-D camera 5 Hz] --> MON
+        LIDAR[360° lidar] --> MON
+        MON["safety_monitor (Python)<br/>YOLOv4-tiny + depth, lidar near field,<br/>OOD check, hysteresis"] -- "speed_scale 20 Hz heartbeat" --> GATE
+        NAV[Nav2] -- cmd_vel --> GATE["speed_gate (C++)<br/>stale > 0.5 s = stop"]
+        GATE -- cmd_vel_safe --> WHEELS[wheels]
+    end
+```
+
+| Situation | Response |
+|---|---|
+| Person within 2 m ahead (camera) | SLOW to 30% |
+| Person within 1 m ahead (camera), or any lidar return in the zone that is not on the map and not another fleet robot | STOP |
+| Camera image out-of-distribution (fog, dark, noise, smudge) | SLOW |
+| No camera frame or no evaluated scan for 0.5 s | STOP |
+| Safety monitor crashed, so no heartbeat for 0.5 s | the C++ gate stops that robot only |
+
+The wheels listen only to `cmd_vel_safe`, and only the gate publishes it. This closed a real bypass: Nav2's `docking_server` was publishing straight to the robot. Leaving STOP needs the zone to be clear for 1 s, so flickering detections can't make the robot lurch. More detail is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Results
 
+**Safety layer** (crossing scenario: people cross robot1's corridor at many distances and phases)
+
 | Metric | Value |
 |---|---|
-| Single robot, 5-goal loop through the gate | **5/5 reached, 44.4 s sim time** (week 1) |
-| Three-robot fleet, 14 goals in parallel (2 runs) | **14/14** (makespan 58.8 s sim) and **13/14** (robot1 wedged after a close pass, goal cancelled at 120 s) (week 2) |
-| Closest robot-to-robot approach / near misses (< 0.5 m) | **0.49 m / 1** and **0.42 m / 2** (week 2) |
-| Fault injection: robot2's safety monitor crashed (SIGKILL) mid-mission | **gate zeroed in 0.50 s (timeout 0.5 s), robot halted in 0.78 s; robot1/robot3 kept driving (0.75 m, 1.17 m in 5 s); resumed 2.8 s after restart** |
-| Camera alone: true stop-zone entries missed (crossing scenario) | **4 of 13**: a 60° camera sees the full 0.8 m-wide zone only beyond ~0.76 m (week 3) |
-| Camera + lidar near field: entries missed | **0 of 16** (week 3) |
-| Stop latency after a person enters the stop zone | **command 0.13 s, robot halted 0.46 s** (medians, n=3) (week 3) |
-| False stops | **0 in 24.5 robot-minutes** (no people) and 1 in 3 robot-minutes (with people) (week 3) |
-| Camera recall for a person ahead, by distance | 0.5-1.0 m 7/56, 1.0-1.5 m 24/117, 1.5-2.0 m 12/14, 2.0-2.5 m 36/59 (week 3) |
-| OOD camera check (AUROC, 6 corruptions) | **image statistics + Mahalanobis 0.93**, MobileNetV2 features 0.80, ImageNet energy score 0.45 (worse than chance) (week 3) |
-| Deployed OOD threshold | 0% clean frames flagged; fog/dark/noise 100%, smudge 60%, blur and overexposure 12% (week 3) |
+| Stop-zone entries missed, camera alone | **4 of 13**. A 60° camera sees the full 0.8 m-wide zone only beyond ~0.76 m. |
+| Stop-zone entries missed, camera + lidar near field | **0 of 16** |
+| Stop latency after a person enters the zone (median, n=3) | **command 0.13 s, robot halted 0.46 s** |
+| False stops | **0 in 24.5 robot-minutes** without people, 1 in 3 robot-minutes with people |
+| Camera recall for a person ahead, by distance | 0.5–1 m 7/56 · 1–1.5 m 24/117 · 1.5–2 m 12/14 · 2–2.5 m 36/59 |
+| Fault injection: robot2's monitor killed (SIGKILL) mid-mission, perception on | gate output zero after **0.51 s**, robot halted after **0.80 s**, robot1 and robot3 drove 1.24 m each during the 5 s outage, robot2 resumed 2.9 s after restart |
 
-Sample sizes are small (minutes of simulation), so these are engineering measurements, not
-safety claims.
+**Degraded-camera (OOD) detection** (210 clean frames, 6 synthetic corruptions)
+
+| Scorer | Mean AUROC |
+|---|---|
+| Image statistics + Mahalanobis (deployed) | **0.93** |
+| MobileNetV2 features + Mahalanobis | 0.80 |
+| ImageNet energy score | 0.45, worse than chance |
+
+With the deployed threshold, no clean test frames from the training routes were flagged. Fog, darkness and noise were caught 100% of the time, a smudge 60%, and blur and overexposure only 12%. When fog was injected live, the robot drove the whole route in SLOW (362 s instead of 112 s) and still reached 6 of 6 goals. **On a lane the model had never seen (robot3's south lane in the demo, close to the walls), 12–16% of clean frames were flagged**, against 80% during fog. The calibration doesn't transfer to new viewpoints, so a real deployment would recalibrate per site.
+
+**Fleet** (week 2): 14 of 14 goals in one run (makespan 58.8 s sim) and 13 of 14 in a second run. The closest robot-to-robot approach was 0.42 m.
+
+All of this comes from minutes of simulation, so treat the numbers as engineering measurements, not safety claims. The full notes, including what went wrong, are in [docs/ROADMAP.md](docs/ROADMAP.md).
+
+## Engineering decisions worth discussing
+
+- **I measured the camera's blind spot instead of assuming coverage.** Scoring against ground truth showed that about half the protective field is invisible to a forward camera. That is why the lidar handles the near field and the camera's job is to recognise a person at 2–3 m and slow early, the same split used in industrial mobile-robot safety.
+- **The textbook OOD score failed.** Energy scores from an ImageNet classifier came out worse than chance on simulated frames, because every simulated frame already looks unfamiliar to it. Five cheap image statistics separated degraded frames far better.
+- **I set the threshold for zero false alarms.** The usual 95th-percentile threshold flagged 21% of later clean frames, because the scene changes during a mission. A safety function that slows the robot that often gets switched off, so the threshold sits at 1.5× the highest validation score. The cost, missing most blur and overexposure, is documented.
+- **A restarted monitor came back too slow to be useful.** While making the demo, the monitor that the director restarted processed about 0.5 frames per second instead of 5. It flapped between NORMAL and CAMERA TIMEOUT, and its robot could never finish a goal. Monitors started from a shell in the same run were fine. Launching the restart detached from the ROS process (own session, clean signal mask, own log) fixed it: the restarted monitor ran at 5 Hz with no timeouts. The root cause is not proven, so the restart rate is checked after every run. The earlier fault-test "resume" number had been measured with the pass-through monitor, so I re-ran the test with perception on.
+- **The safety layer first broke navigation.** Unbounded detector threads and 10 Hz cameras starved Nav2 and slowed the simulation, which caused stale-sensor stops. The fix was to cap the detector at 2 threads and run the cameras at 5 Hz. Both are measured.
 
 ## Quickstart
 
-Requires [uv](https://docs.astral.sh/uv/) and Docker Desktop.
+You need [uv](https://docs.astral.sh/uv/) and Docker Desktop. It runs natively on Apple Silicon (arm64).
 
 ```bash
-make setup              # Python ML side
-make test
-make docker-build       # ROS 2 image (first build downloads several GB)
-make sim                # simulation + Foxglove on ws://localhost:8765
-make missions           # headless 5-goal run, JSON report in results/
-make sim-fleet          # three robots + Foxglove
-make fleet              # headless three-robot run, fleet report in results/
-make fault             # crash robot2's safety monitor mid-mission, score the fail-safe
+make setup && make test     # Python side: 44 unit tests
+make docker-build           # ROS 2 Jazzy image (first build downloads several GB)
+make sim-fleet              # three robots + Foxglove on ws://localhost:8765
+make fleet                  # headless fleet missions -> results/
+make fault                  # kill robot2's safety monitor mid-mission, score the fail-safe
+make eval-crossing          # stop latency / missed entries vs ground truth
+make eval-false-stops       # three robots, no people: every stop is a false stop
+make demo && make render-demo   # record the demo scenario, render docs/media/demo.mp4
 ```
 
-### Viewing in Foxglove
+<details>
+<summary>Viewing in Foxglove</summary>
 
-With `make sim` running, open [Foxglove](https://foxglove.dev/download) and choose
-**Open connection → Foxglove WebSocket → `ws://localhost:8765`**. Add a **3D** panel and
-enable `/map`, `/scan`, `/tf`, `/robot_description` and `/plan`. Send a goal with the panel's
-**Publish → Pose** tool on `/goal_pose`, or stop `make sim` and run `make missions` instead (the
-bridge is served there too) to watch the five-goal loop. Add a **Plot** panel on `/safety/speed_scale.data`
-to watch the safety scale.
+With `make sim-fleet` running, open [Foxglove](https://foxglove.dev/download) and choose **Open connection → Foxglove WebSocket → `ws://localhost:8765`**.
+1. Add a **3D** panel and set its display frame to `world`.
+2. Enable `/tf`, `/fleet/robot1/scan` … `/fleet/robot3/scan` and `/fleet/robot1/map`.
+3. For the robot models, add one **URDF** layer per robot, with topic `/robotN/robot_description` and frame prefix `robotN/`.
+4. To see what the detector sees, add an **Image** panel on `/robotN/safety/annotated`.
 
-The bridge (foxglove_bridge 3.x) speaks only the `foxglove.sdk.v1` protocol, so use a current
-Foxglove release. One simulated robot uses about 1.1 GB of RAM and 1.8 CPU cores.
+The bridge (foxglove_bridge 3.x) speaks only the `foxglove.sdk.v1` protocol, so use a current Foxglove release.
+</details>
 
-**Whole fleet in one view** (`make sim-fleet` or `make fleet`): set the 3D panel's display
-frame to `world` and enable `/tf`, `/fleet/robot1/scan` … `/fleet/robot3/scan` and
-`/fleet/robot1/map`. For the robot models add one **URDF** custom layer per robot with topic
-`/robotN/robot_description` and frame prefix `robotN/`. `fleet_tf_relay` merges each robot's
-own TF tree into the global `/tf` as `robotN/<frame>`; the robots' trees are untouched.
+## Repository layout
 
-## Roadmap
+```
+src/fleet_ml/            detector, zones, perception geometry, OOD (pure Python, unit-tested)
+ros2_ws/src/speed_gate/  C++ fail-safe velocity gate
+ros2_ws/src/fleet_safety/ safety_monitor node
+ros2_ws/src/fleet_bringup/ launch, fleet/people configs, mission runner, evaluation,
+                         fault injection, demo director
+scripts/                 run scripts, OOD evaluation, demo renderer
+```
 
-See [docs/ROADMAP.md](docs/ROADMAP.md).
+## Known limitations
+
+- Robots sometimes get pinned against a pillar when Nav2 cuts a corner. This is a Nav2 clearance tuning issue, separate from the safety layer, which stays NORMAL throughout. A quick retune made things worse and was reverted. See the roadmap.
+- The people are scripted Gazebo actors, and the detector is a COCO model that was not fine-tuned. Recall on real camera images would differ.
+- The OOD check misses most blur and overexposure at its threshold, and it flags 12–16% of clean frames on viewpoints it wasn't fitted on.
+- The fault test runs on the straight demo lanes. On the week-2 routes, with perception on, the lidar and the pillar wedging meant the three robots were rarely all driving at once, which the test needs.
 
 ## In italiano
 
-Flotta di robot mobili in ROS 2 / Nav2 con un livello di sicurezza basato su visione: i robot si fermano quando una persona entra nella zona protetta e rallentano quando la telecamera vede qualcosa di sconosciuto. Il gate di velocità è scritto in C++ ed è fail-safe. Collegato al nuovo Regolamento Macchine UE.
+Tre robot mobili simulati (ROS 2 Jazzy, Nav2, Gazebo) svolgono missioni mentre alcune persone attraversano i loro percorsi. Ogni robot ha una propria catena di sicurezza:
+- **Telecamera:** riconosce le persone (YOLOv4-tiny + profondità) e rallenta il robot a 2 m.
+- **Lidar a 360°:** lo ferma per qualsiasi ostacolo sconosciuto entro 1 m.
+- **Controllo dell'immagine:** fa rallentare il robot quando l'immagine non è affidabile (nebbia, buio, lente sporca).
+- **Gate di velocità in C++:** ferma il robot se il monitor di sicurezza smette di rispondere.
+
+Risultati misurati rispetto alla verità di riferimento del simulatore:
+- la sola telecamera ha mancato 4 ingressi su 13 nella zona di arresto, telecamera + lidar 0 su 16;
+- arresto in 0,46 s (mediana);
+- 0 arresti indesiderati in 24,5 minuti-robot;
+- rilevamento delle immagini degradate con AUROC 0,93.
+
+Il progetto è collegato al nuovo Regolamento Macchine UE 2023/1230. È un dimostratore didattico, non una funzione di sicurezza certificata.
 
 ## Credits
 
@@ -88,5 +147,4 @@ Flotta di robot mobili in ROS 2 / Nav2 con un livello di sicurezza basato su vis
 
 ## Licence
 
-Code: MIT, see [LICENSE](LICENSE). Datasets and third-party assets keep their own licences;
-see [data/README.md](data/README.md).
+Code: MIT, see [LICENSE](LICENSE). Datasets and third-party assets keep their own licences; see [data/README.md](data/README.md).

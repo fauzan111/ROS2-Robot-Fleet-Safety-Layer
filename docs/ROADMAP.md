@@ -118,11 +118,49 @@
 ## Week 4: polish
 
 - [x] Fault injection: kill safety_monitor and show the fail-safe stop (done in week 2)
-- [ ] README results, 2-minute video, LinkedIn post (robotica mobile, sicurezza)
+- [x] README results, 2-minute video, LinkedIn post (robotica mobile, sicurezza)
+
+### Week 4 notes
+
+- `make demo` records one scripted run to a bag: robot1 shuttles the corridor the two
+  people cross, `demo_director` SIGKILLs robot2's safety_monitor and restarts it, and fogs
+  robot3's camera for 18 s through a new runtime `ood_inject` parameter. A fixed overhead
+  camera (demo only) is added to the world. Routes stay on straight lanes so the video does
+  not depend on the open pillar-clearance item.
+- `make render-demo` (host, `rosbags` + bundled ffmpeg) turns the bag into
+  `docs/media/demo.mp4` and the README GIF. Zones are drawn from ground-truth poses and
+  coloured by each robot's logged state; captions come from logged states and director events.
+- Found while building it: the restarted monitor in `fault_injection` lacked
+  `other_robots`, so after a restart its lidar would have stopped for the other robots.
+  Fixed in the shared `restart_monitor` helper.
+- **Restarted monitor too slow (found in the demo).** The monitor that `demo_director`
+  restarted processed ~0.5 frames/s instead of 5 for over 200 s of sim time, flapping
+  NORMAL <-> CAMERA TIMEOUT; robot2 cancelled a goal after 120 s. robot1/robot3 stayed at
+  5.0 frames/s throughout, also after they had finished their missions, so this was not
+  load; a monitor started from a shell in the same run ran at 5 Hz. `restart_monitor` now
+  starts the node detached (own session, empty signal mask, own log). After the change:
+  restarted monitor 0 camera timeouts, ~5 frames/s, demo 14/14 goals. Root cause not proven.
+- **Fault test re-run with perception on.** The week-2 numbers came from the pass-through
+  monitor (perception was added to the restart later the same day). With perception, on the
+  week-2 routes the three robots were never all driving at once (lidar stops near each other,
+  robot3 wedged at a pillar), so `make fault` now uses the demo lanes: gate 0.51 s, halt
+  0.80 s, robot1/robot3 1.24 m each during the outage, resume 2.86 s. PASS.
+- **OOD calibration does not transfer.** Demo run, deployed threshold 5.92: robot1's corridor
+  0% clean frames flagged; robot3's new south lane (walls close up, not in the fitting data)
+  16% before the fog, 80% during, 12% after. "0% clean frames flagged" holds only for
+  viewpoints like the fitting routes.
+- One fault run was invalid: a finished demo container was still running at 650% CPU (its
+  cleanup trap waited forever on a child that ignored SIGTERM). All run scripts now use a
+  bounded cleanup (TERM, 3 s, KILL).
+- First demo recordings failed in instructive ways: the director waited for all robots to be
+  moving at the same instant (they rarely are, with people around); robot3's first lane ran
+  0.25 m from a slanted wall and past the people's waiting spot (2/4 goals); and `ros2 bag
+  record` never saw the SIGINT meant to stop it (bash starts background jobs with SIGINT
+  ignored), so it was killed before writing its index. It is now stopped with SIGTERM.
 
 ## Definition of done
 
-- [ ] Results table filled in the README
-- [ ] 2-minute demo video linked
-- [ ] Tests and lint green
-- [ ] LinkedIn post (Italian and English)
+- [x] Results table filled in the README
+- [x] 2-minute demo video linked
+- [x] Tests and lint green
+- [x] LinkedIn post (Italian and English) drafted (posting is manual)
